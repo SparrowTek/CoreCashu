@@ -9,7 +9,6 @@
 import Foundation
 @preconcurrency import P256K
 import CryptoKit
-import Security
 import BigInt
 
 // MARK: - NUT-12: Offline ecash signature validation
@@ -330,17 +329,8 @@ public func verifyDLEQProofCarol(
 
 /// Create a secure random scalar for DLEQ proof generation
 public func generateSecureRandomScalar() throws -> Data {
-    var randomBytes = Data(count: 32)
-    let result = randomBytes.withUnsafeMutableBytes { bytes in
-        guard let baseAddress = bytes.bindMemory(to: UInt8.self).baseAddress else {
-            return errSecParam
-        }
-        return SecRandomCopyBytes(kSecRandomDefault, 32, baseAddress)
-    }
-    
-    guard result == errSecSuccess else {
-        throw CashuError.keyGenerationFailed
-    }
+    // Use cross-platform secure random generation
+    let randomBytes = try SecureRandom.generateKey()
     
     // Simple check to ensure we don't have all zeros
     if randomBytes.allSatisfy({ $0 == 0 }) {

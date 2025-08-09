@@ -550,12 +550,12 @@ public struct DeviceAuthorizationResponse: CashuCodabale, Sendable {
 
 /// Service for handling clear authentication
 public actor ClearAuthService: Sendable {
-    private let networkService: any NetworkService
+    private let networking: any Networking
     private var tokenStore: [String: OAuthTokenResponse] = [:]
     private var configCache: [String: OpenIDConnectConfig] = [:]
     
-    public init(networkService: any NetworkService) {
-        self.networkService = networkService
+    public init(networking: any Networking = URLSession.shared) {
+        self.networking = networking
     }
     
     /// Discover OpenID Connect configuration
@@ -570,7 +570,7 @@ public actor ClearAuthService: Sendable {
         request.httpMethod = "GET"
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await networking.data(for: request, delegate: nil)
         
         guard let httpResponse = response as? HTTPURLResponse,
               httpResponse.statusCode == 200 else {
@@ -637,7 +637,7 @@ public actor ClearAuthService: Sendable {
         let body = params.map { "\($0.key)=\($0.value)" }.joined(separator: "&")
         request.httpBody = body.data(using: .utf8)
         
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await networking.data(for: request, delegate: nil)
         
         guard let httpResponse = response as? HTTPURLResponse,
               httpResponse.statusCode == 200 else {
@@ -675,7 +675,7 @@ public actor ClearAuthService: Sendable {
         let body = params.map { "\($0.key)=\($0.value)" }.joined(separator: "&")
         request.httpBody = body.data(using: .utf8)
         
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await networking.data(for: request, delegate: nil)
         
         guard let httpResponse = response as? HTTPURLResponse,
               httpResponse.statusCode == 200 else {
@@ -708,7 +708,7 @@ public actor ClearAuthService: Sendable {
         let body = params.map { "\($0.key)=\($0.value)" }.joined(separator: "&")
         request.httpBody = body.data(using: .utf8)
         
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await networking.data(for: request, delegate: nil)
         
         guard let httpResponse = response as? HTTPURLResponse else {
             throw CashuError.clearAuthFailed("Invalid response")
@@ -763,7 +763,7 @@ public actor ClearAuthService: Sendable {
         let body = params.map { "\($0.key)=\($0.value)" }.joined(separator: "&")
         request.httpBody = body.data(using: .utf8)
         
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await networking.data(for: request, delegate: nil)
         
         guard let httpResponse = response as? HTTPURLResponse,
               httpResponse.statusCode == 200 else {

@@ -362,24 +362,13 @@ public struct HTLCCreator: Sendable {
     
     /// Generate a random 32-byte preimage
     public static func generatePreimage() -> Data {
-        var preimage = Data(count: 32)
-        _ = preimage.withUnsafeMutableBytes { bytes in
-            guard let baseAddress = bytes.baseAddress else {
-                return errSecParam
-            }
-            return SecRandomCopyBytes(kSecRandomDefault, 32, baseAddress)
-        }
-        return preimage
+        // Use cross-platform secure random generation
+        return (try? SecureRandom.generateKey()) ?? Data(repeating: 0, count: 32)
     }
     
     private static func generateNonce() -> String {
-        var nonce = Data(count: 16)
-        _ = nonce.withUnsafeMutableBytes { bytes in
-            guard let baseAddress = bytes.baseAddress else {
-                return errSecParam
-            }
-            return SecRandomCopyBytes(kSecRandomDefault, 16, baseAddress)
-        }
+        // Use cross-platform secure random generation
+        let nonce = (try? SecureRandom.generateNonce()) ?? Data(repeating: 0, count: 16)
         return nonce.hexString
     }
 }

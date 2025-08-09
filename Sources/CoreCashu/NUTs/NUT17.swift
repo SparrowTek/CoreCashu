@@ -254,8 +254,9 @@ public enum WsMessage: Sendable {
 // MARK: - WebSocket Client
 
 /// WebSocket client for NUT-17 communication
+/// This is a specialized WebSocket client for the NUT-17 protocol
 @available(iOS 13.0, macOS 10.15, *)
-public actor WebSocketClient {
+public actor NUT17WebSocketClient {
     /// WebSocket task
     private var webSocketTask: URLSessionWebSocketTask?
     
@@ -538,7 +539,7 @@ extension MintInfo {
 extension CashuWallet {
     /// Create WebSocket client for this wallet's mint
     @available(iOS 13.0, macOS 10.15, *)
-    public func createWebSocketClient() throws -> WebSocketClient {
+    public func createWebSocketClient() throws -> NUT17WebSocketClient {
         // Replace https:// with wss:// or http:// with ws://
         var wsURLString = mintURL
         if wsURLString.hasPrefix("https://") {
@@ -554,6 +555,6 @@ extension CashuWallet {
             throw CashuError.invalidMintURL
         }
         
-        return WebSocketClient(url: wsURL)
+        return NUT17WebSocketClient(url: wsURL)
     }
 }

@@ -289,12 +289,8 @@ private func generateRandomSecret() throws -> Data {
 
 /// Generate random bytes
 private func generateRandomBytes(count: Int) throws -> Data {
-    var bytes = [UInt8](repeating: 0, count: count)
-    let result = SecRandomCopyBytes(kSecRandomDefault, count, &bytes)
-    guard result == errSecSuccess else {
-        throw CashuError.keyGenerationFailed
-    }
-    return Data(bytes)
+    // Use cross-platform secure random generation
+    return try SecureRandom.generateBytes(count: count)
 }
 
 /// Blind a message using the same implementation as NUT-13

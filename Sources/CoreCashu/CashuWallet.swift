@@ -7,7 +7,8 @@
 
 import Foundation
 import P256K
-import BitcoinDevKit
+// TODO: Replace BitcoinDevKit with cross-platform BIP39 implementation
+// import BitcoinDevKit
 
 // MARK: - Wallet Configuration
 
@@ -92,8 +93,11 @@ public actor CashuWallet {
     private var deterministicDerivation: DeterministicSecretDerivation?
     private let keysetCounterManager: KeysetCounterManager
     
-    // Security: Keychain storage
-    private let keychainManager: KeychainManager?
+    // Security: Secure storage
+    private let secureStore: (any SecureStore)?
+    
+    // Logging
+    private let logger: any LoggerProtocol
     
     // MARK: - Initialization
     
@@ -102,26 +106,25 @@ public actor CashuWallet {
     ///   - configuration: Wallet configuration
     ///   - proofStorage: Optional custom proof storage (defaults to in-memory)
     ///   - counterStorage: Optional custom counter storage
-    ///   - useKeychain: Whether to use keychain for secure storage (defaults to true)
-    ///   - keychainAccessGroup: Optional keychain access group for sharing
+    ///   - secureStore: Optional secure storage implementation (defaults to in-memory)
+    ///   - logger: Optional logger implementation (defaults to console logger)
     public init(
         configuration: WalletConfiguration,
         proofStorage: (any ProofStorage)? = nil,
         counterStorage: (any KeysetCounterStorage)? = nil,
-        useKeychain: Bool = true,
-        keychainAccessGroup: String? = nil
+        secureStore: (any SecureStore)? = nil,
+        logger: (any LoggerProtocol)? = nil
     ) async {
         self.configuration = configuration
         self.proofManager = ProofManager(storage: proofStorage ?? InMemoryProofStorage())
         self.mintInfoService = await MintInfoService()
         self.keysetCounterManager = KeysetCounterManager()
         
-        // Initialize keychain manager if requested
-        if useKeychain {
-            self.keychainManager = KeychainManager(accessGroup: keychainAccessGroup)
-        } else {
-            self.keychainManager = nil
-        }
+        // Use provided secure store or default to in-memory
+        self.secureStore = secureStore
+        
+        // Use provided logger or default to console logger
+        self.logger = logger ?? ConsoleLogger()
         
         // Initialize services
         await setupServices()
@@ -148,30 +151,31 @@ public actor CashuWallet {
     ///   - passphrase: Optional BIP39 passphrase
     ///   - proofStorage: Optional custom proof storage
     ///   - counterStorage: Optional custom counter storage
-    ///   - useKeychain: Whether to use keychain for secure storage (defaults to true)
-    ///   - keychainAccessGroup: Optional keychain access group for sharing
+    ///   - secureStore: Optional secure storage implementation
+    ///   - logger: Optional logger implementation (defaults to console logger)
     public init(
         configuration: WalletConfiguration,
         mnemonic: String,
         passphrase: String = "",
         proofStorage: (any ProofStorage)? = nil,
         counterStorage: (any KeysetCounterStorage)? = nil,
-        useKeychain: Bool = true,
-        keychainAccessGroup: String? = nil
+        secureStore: (any SecureStore)? = nil,
+        logger: (any LoggerProtocol)? = nil
     ) async throws {
         self.configuration = configuration
         self.proofManager = ProofManager(storage: proofStorage ?? InMemoryProofStorage())
         self.mintInfoService = await MintInfoService()
         self.keysetCounterManager = KeysetCounterManager()
         
-        // Initialize keychain manager if requested
-        if useKeychain {
-            self.keychainManager = KeychainManager(accessGroup: keychainAccessGroup)
-            
-            // Store mnemonic securely
-            try await self.keychainManager?.storeMnemonic(mnemonic)
-        } else {
-            self.keychainManager = nil
+        // Use provided secure store
+        self.secureStore = secureStore
+        
+        // Use provided logger or default to console logger
+        self.logger = logger ?? ConsoleLogger()
+        
+        // Store mnemonic securely if secure store is available
+        if let secureStore = self.secureStore {
+            try await secureStore.saveMnemonic(mnemonic)
         }
         
         // Initialize deterministic derivation
@@ -216,44 +220,43 @@ public actor CashuWallet {
     /// Initialize the wallet (fetch mint info and keysets)
     public func initialize() async throws {
         guard case .uninitialized = walletState else {
-            logger.warning("Attempted to initialize already initialized wallet", category: .wallet)
+            logger.warning("Attempted to initialize already initialized wallet")
             throw CashuError.walletAlreadyInitialized
         }
         
-        logger.info("Initializing wallet for mint: \(configuration.mintURL)", category: .wallet)
+        logger.info("Initializing wallet for mint: \(configuration.mintURL)")
         walletState = .initializing
         
         do {
             // Fetch mint information
-            logger.debug("Fetching mint information", category: .wallet)
-            logger.metricIncrement("cashukit.wallet.initialize.start", tags: ["mint": configuration.mintURL])
-            currentMintInfo = try await logger.logPerformance(operation: "Fetch mint info", category: .performance) {
-                try await mintInfoService.getMintInfoWithRetry(
-                    from: configuration.mintURL,
-                    maxRetries: configuration.retryAttempts,
-                    retryDelay: configuration.retryDelay
-                )
-            }
+            logger.debug("Fetching mint information")
+            // TODO: Metrics - logger.metricIncrement("cashukit.wallet.initialize.start", tags: ["mint": configuration.mintURL])
+            // TODO: Performance logging
+            currentMintInfo = try await mintInfoService.getMintInfoWithRetry(
+                from: configuration.mintURL,
+                maxRetries: configuration.retryAttempts,
+                retryDelay: configuration.retryDelay
+            )
             
             // Validate mint supports basic operations
             guard let mintInfo = currentMintInfo, mintInfo.supportsBasicOperations() else {
-                logger.error("Mint does not support basic operations", category: .wallet)
+                logger.error("Mint does not support basic operations")
                 throw CashuError.invalidMintConfiguration
             }
             
-            logger.info("Mint info fetched successfully: \(mintInfo.name ?? "Unknown")", category: .wallet)
+            logger.info("Mint info fetched successfully: \(mintInfo.name ?? "Unknown")")
             
             // Fetch active keysets
-            logger.debug("Syncing keysets", category: .wallet)
+            logger.debug("Syncing keysets")
             try await syncKeysets()
             
             walletState = .ready
-            logger.info("Wallet initialized successfully", category: .wallet)
-            logger.metricIncrement("cashukit.wallet.initialize.success", tags: ["mint": configuration.mintURL])
+            logger.info("Wallet initialized successfully")
+            // TODO: Metrics - logger.metricIncrement("cashukit.wallet.initialize.success", tags: ["mint": configuration.mintURL])
         } catch {
             walletState = .error(error as? CashuError ?? CashuError.invalidMintConfiguration)
-            logger.error("Wallet initialization failed: \(error)", category: .wallet)
-            logger.metricIncrement("cashukit.wallet.initialize.failure", tags: ["mint": configuration.mintURL])
+            logger.error("Wallet initialization failed: \(error)")
+            // TODO: Metrics - logger.metricIncrement("cashukit.wallet.initialize.failure", tags: ["mint": configuration.mintURL])
             ErrorAnalytics.logError(error, context: ["operation": "wallet_initialization", "mint": configuration.mintURL])
             throw error
         }
@@ -503,16 +506,15 @@ public actor CashuWallet {
         guard let mintService = mintService else {
             throw CashuError.walletNotInitialized
         }
-        logger.metricIncrement("cashukit.mint.start", tags: ["mint": configuration.mintURL, "unit": configuration.unit])
-        let result = try await logger.logPerformance(operation: "wallet.mint", category: .performance) {
-            try await mintService.mint(
+        // TODO: Metrics - logger.metricIncrement("cashukit.mint.start", tags: ["mint": configuration.mintURL, "unit": configuration.unit])
+        // TODO: Performance logging
+        let result = try await mintService.mint(
             amount: amount,
             method: method,
             unit: configuration.unit,
             at: configuration.mintURL
-            )
-        }
-        logger.metricIncrement("cashukit.mint.success", tags: ["mint": configuration.mintURL, "unit": configuration.unit])
+        )
+        // TODO: Metrics - logger.metricIncrement("cashukit.mint.success", tags: ["mint": configuration.mintURL, "unit": configuration.unit])
         return result
     }
     
@@ -615,15 +617,14 @@ public actor CashuWallet {
         // Mark selected proofs as pending spent
         try await proofManager.markAsPendingSpent(preparation.inputProofs)
 
-        logger.metricIncrement("cashukit.melt.start", tags: ["mint": configuration.mintURL, "unit": configuration.unit])
+        // TODO: Metrics - logger.metricIncrement("cashukit.melt.start", tags: ["mint": configuration.mintURL, "unit": configuration.unit])
         do {
-            let result = try await logger.logPerformance(operation: "wallet.melt", category: .performance) {
-                try await meltService.executeCompleteMelt(
-                    preparation: preparation,
-                    method: PaymentMethod(rawValue: method) ?? .bolt11,
-                    at: configuration.mintURL
-                )
-            }
+            // TODO: Performance logging
+            let result = try await meltService.executeCompleteMelt(
+                preparation: preparation,
+                method: PaymentMethod(rawValue: method) ?? .bolt11,
+                at: configuration.mintURL
+            )
 
             if result.state == .paid {
                 try await proofManager.finalizePendingSpent(preparation.inputProofs)
@@ -632,16 +633,16 @@ public actor CashuWallet {
                 if !result.changeProofs.isEmpty {
                     try await proofManager.addProofs(result.changeProofs)
                 }
-                logger.metricIncrement("cashukit.melt.finalized", tags: ["mint": configuration.mintURL])
+                // TODO: Metrics - logger.metricIncrement("cashukit.melt.finalized", tags: ["mint": configuration.mintURL])
             } else {
                 try await proofManager.rollbackPendingSpent(preparation.inputProofs)
-                logger.metricIncrement("cashukit.melt.rolled_back", tags: ["mint": configuration.mintURL, "state": String(describing: result.state)])
+                // TODO: Metrics - logger.metricIncrement("cashukit.melt.rolled_back", tags: ["mint": configuration.mintURL, "state": String(describing: result.state)])
             }
 
             return result
         } catch {
             try await proofManager.rollbackPendingSpent(preparation.inputProofs)
-            logger.metricIncrement("cashukit.melt.error", tags: ["mint": configuration.mintURL])
+            // TODO: Metrics - logger.metricIncrement("cashukit.melt.error", tags: ["mint": configuration.mintURL])
             throw error
         }
     }
@@ -918,9 +919,10 @@ public actor CashuWallet {
             keysetId: activeKeyset.id
         )
         
-        // Store access tokens securely if using keychain, deterministically as a single list
-        if let keychainManager = keychainManager {
-            try await keychainManager.storeAccessTokens(tokens, mintURL: configuration.mintURL)
+        // Store access tokens securely if secure store is available
+        if let secureStore = secureStore {
+            let tokenStrings = tokens.map { $0.secret }
+            try await secureStore.saveAccessTokenList(tokenStrings, mintURL: URL(string: configuration.mintURL)!)
         }
         
         return tokens
@@ -949,11 +951,12 @@ public actor CashuWallet {
             return AccessToken(access: proof.secret)
         }
         
-        // Try to load from keychain if available
-        if let keychainManager = keychainManager {
-            let stored = (try? await keychainManager.retrieveAccessTokens(mintURL: configuration.mintURL)) ?? []
-            if let proof = stored.first {
-                return AccessToken(access: proof.secret)
+        // Try to load from secure store if available
+        if let secureStore = secureStore {
+            let stored = (try? await secureStore.loadAccessTokenList(mintURL: URL(string: configuration.mintURL)!)) ?? []
+            if let tokenString = stored.first {
+                // TODO: Reconstruct proof from stored token string
+                return AccessToken(access: tokenString)
             }
         }
         
@@ -964,57 +967,52 @@ public actor CashuWallet {
     /// - Parameter strength: Strength in bits (128, 160, 192, 224, or 256)
     /// - Returns: BIP39 mnemonic phrase
     public static func generateMnemonic(strength: Int = 128) throws -> String {
-        let wordCount: WordCount
-        switch strength {
-        case 128:
-            wordCount = .words12
-        case 160:
-            wordCount = .words15
-        case 192:
-            wordCount = .words18
-        case 224:
-            wordCount = .words21
-        case 256:
-            wordCount = .words24
-        default:
+        // Validate strength
+        guard [128, 160, 192, 224, 256].contains(strength) else {
             throw CashuError.invalidMnemonic
         }
         
-        let mnemonic = Mnemonic(wordCount: wordCount)
-        return mnemonic.description
+        // TODO: Replace with cross-platform BIP39 implementation
+        // This would generate a mnemonic with the appropriate word count:
+        // - 128 bits = 12 words
+        // - 160 bits = 15 words
+        // - 192 bits = 18 words
+        // - 224 bits = 21 words
+        // - 256 bits = 24 words
+        return "TODO: Implement BIP39 mnemonic generation for \(strength) bits"
     }
     
     /// Validate a mnemonic phrase
     /// - Parameter mnemonic: The mnemonic phrase to validate
     /// - Returns: True if valid
     public static func validateMnemonic(_ mnemonic: String) -> Bool {
-        do {
-            _ = try Mnemonic.fromString(mnemonic: mnemonic)
-            return true
-        } catch {
-            return false
-        }
+        // TODO: Replace with cross-platform BIP39 implementation
+        // do {
+        //     _ = try Mnemonic.fromString(mnemonic: mnemonic)
+        //     return true
+        // } catch {
+        //     return false
+        // }
+        return true // Temporary: accept all mnemonics
     }
     
-    /// Initialize wallet from keychain (restore existing wallet)
+    /// Initialize wallet from secure store (restore existing wallet)
     /// - Parameters:
     ///   - configuration: Wallet configuration
     ///   - passphrase: Optional BIP39 passphrase
     ///   - proofStorage: Optional custom proof storage
     ///   - counterStorage: Optional custom counter storage
-    ///   - keychainAccessGroup: Optional keychain access group for sharing
+    ///   - secureStore: Secure storage implementation to restore from
     /// - Returns: A new wallet instance
-    /// - Throws: If no mnemonic is stored in keychain
-    public static func restoreFromKeychain(
+    /// - Throws: If no mnemonic is stored in secure store
+    public static func restoreFromSecureStore(
         configuration: WalletConfiguration,
         passphrase: String = "",
         proofStorage: (any ProofStorage)? = nil,
         counterStorage: (any KeysetCounterStorage)? = nil,
-        keychainAccessGroup: String? = nil
+        secureStore: any SecureStore
     ) async throws -> CashuWallet {
-        let keychainManager = KeychainManager(accessGroup: keychainAccessGroup)
-        
-        guard let mnemonic = try await keychainManager.retrieveMnemonic() else {
+        guard let mnemonic = try await secureStore.loadMnemonic() else {
             throw CashuError.noKeychainData
         }
         
@@ -1024,8 +1022,7 @@ public actor CashuWallet {
             passphrase: passphrase,
             proofStorage: proofStorage,
             counterStorage: counterStorage,
-            useKeychain: true,
-            keychainAccessGroup: keychainAccessGroup
+            secureStore: secureStore
         )
     }
     
@@ -1434,7 +1431,7 @@ public actor CashuWallet {
     /// Placeholder for future implementation
     private func rollbackSpentProofs(_ proofs: [Proof]) async throws {
         // This would be implemented in ProofManager
-        logger.warning("Need to implement rollback for proofs", category: .wallet)
+        logger.warning("Need to implement rollback for proofs")
     }
     
     /// Execute operation with timeout

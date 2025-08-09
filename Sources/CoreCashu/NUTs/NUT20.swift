@@ -9,7 +9,8 @@
 import Foundation
 import CryptoKit
 @preconcurrency import P256K
-import BitcoinDevKit
+// TODO: Replace BitcoinDevKit with cross-platform implementation if needed
+// import BitcoinDevKit
 import BigInt
 
 // MARK: - NUT-20: Signature on Mint Quote

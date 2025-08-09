@@ -9,7 +9,8 @@ import Testing
 @testable import CoreCashu
 import Foundation
 import P256K
-import BitcoinDevKit
+// TODO: Replace BitcoinDevKit with cross-platform BIP39 implementation
+// import BitcoinDevKit
 
 @Suite("NUT-13 Tests")
 struct NUT13Tests {

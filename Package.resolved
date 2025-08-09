@@ -1,15 +1,6 @@
 {
-  "originHash" : "91aa9a7649f980f9bbe90c8b1026c6aca1a334843dfedb176ac8c9f892bbb423",
+  "originHash" : "766df01f9d0c54bb78e82b0f6757c528cad89fd3bacd7c7e283ff9f2444d289b",
   "pins" : [
-    {
-      "identity" : "bdk-swift",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/bitcoindevkit/bdk-swift.git",
-      "state" : {
-        "revision" : "370f3947d4fd87377f645927d4a86597f1591cc0",
-        "version" : "2.0.0"
-      }
-    },
     {
       "identity" : "bigint",
       "kind" : "remoteSourceControl",
@@ -44,15 +35,6 @@
       "state" : {
         "revision" : "04ccff117f6549121d5721ec84fdf0162122b90e",
         "version" : "0.5.0"
-      }
-    },
-    {
-      "identity" : "vault",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/SparrowTek/Vault.git",
-      "state" : {
-        "revision" : "25df48f62a5382c217cfe67f2a12e6efe8f60ec4",
-        "version" : "1.2.0"
       }
     }
   ],

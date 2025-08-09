@@ -303,6 +303,6 @@ public struct ErrorAnalytics {
         logContext["function"] = function
         logContext["line"] = line
         
-        logger.error("Error occurred: \(error) - Context: \(logContext)", file: file, function: function, line: line)
+        // logger.error("Error occurred: \(error) - Context: \(logContext)", file: file, function: function, line: line)
     }
 }

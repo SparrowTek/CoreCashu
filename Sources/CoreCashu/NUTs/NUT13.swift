@@ -8,7 +8,8 @@
 import Foundation
 import P256K
 import CryptoKit
-import BitcoinDevKit
+// TODO: Replace BitcoinDevKit with cross-platform BIP39 implementation
+// import BitcoinDevKit
 import CommonCrypto
 import BigInt
 
@@ -31,7 +32,13 @@ public struct DeterministicSecretDerivation: Sendable {
     
     public init(mnemonic: String, passphrase: String = "") throws {
         // Validate mnemonic
-        _ = try Mnemonic.fromString(mnemonic: mnemonic)
+        // TODO: Replace with cross-platform BIP39 validation
+        // _ = try Mnemonic.fromString(mnemonic: mnemonic)
+        // For now, do basic validation
+        let words = mnemonic.split(separator: " ")
+        guard [12, 15, 18, 21, 24].contains(words.count) else {
+            throw CashuError.invalidMnemonic
+        }
         
         // BDK doesn't expose seed generation directly, so we'll compute it ourselves
         // This follows BIP39 standard: PBKDF2 with HMAC-SHA512

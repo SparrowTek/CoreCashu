@@ -54,13 +54,13 @@ public actor RateLimiter {
         }
         
         if recentRequests.count >= configuration.maxRequests {
-            logger.warning("Rate limit exceeded: \(recentRequests.count)/\(configuration.maxRequests) requests in window", category: .network)
+            // logger.warning("Rate limit exceeded: \(recentRequests.count)/\(configuration.maxRequests) requests in window")
             return false
         }
         
         // Check token bucket for burst control
         if tokens < 1.0 {
-            logger.warning("Rate limit: No tokens available for burst", category: .network)
+            // logger.warning("Rate limit: No tokens available for burst")
             return false
         }
         
@@ -71,14 +71,14 @@ public actor RateLimiter {
     public func recordRequest() {
         requestTimes.append(Date())
         tokens = max(0, tokens - 1)
-        logger.debug("Rate limit: Recorded request, tokens remaining: \(Int(tokens))", category: .network)
+        // logger.debug("Rate limit: Recorded request, tokens remaining: \(Int(tokens))")
     }
     
     /// Wait until a request can be made
     public func waitForAvailability() async throws {
         while !shouldAllowRequest() {
             let waitTime = calculateWaitTime()
-            logger.info("Rate limit: Waiting \(String(format: "%.2f", waitTime))s before next request", category: .network)
+            // logger.info("Rate limit: Waiting \(String(format: "%.2f", waitTime))s before next request")
             try await Task.sleep(nanoseconds: UInt64(waitTime * 1_000_000_000))
         }
     }
@@ -88,7 +88,7 @@ public actor RateLimiter {
         requestTimes.removeAll()
         tokens = Double(configuration.burstCapacity)
         lastRefillTime = Date()
-        logger.debug("Rate limiter reset", category: .network)
+        // logger.debug("Rate limiter reset")
     }
     
     /// Get current rate limit status

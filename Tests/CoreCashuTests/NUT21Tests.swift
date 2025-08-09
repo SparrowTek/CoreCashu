@@ -2,11 +2,18 @@ import Testing
 import Foundation
 @testable import CoreCashu
 
-// Mock NetworkService for testing
-private actor MockNetworkService: NetworkService {
-    func execute<T: CashuCodabale>(method: String, path: String, payload: Data?) async throws -> T {
-        // Mock implementation
-        throw CashuError.networkError("Mock not implemented")
+// Mock Networking for testing
+private actor MockNetworkService: Networking {
+    func data(for request: URLRequest, delegate: (any URLSessionTaskDelegate)?) async throws -> (Data, URLResponse) {
+        // Mock implementation - return a basic JSON response
+        let responseData = Data("{}".utf8)
+        let response = HTTPURLResponse(
+            url: request.url ?? URL(string: "https://example.com")!,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: nil
+        )!
+        return (responseData, response)
     }
 }
 
@@ -241,7 +248,7 @@ struct NUT21Tests {
     @Test("ClearAuthService initialization")
     func testClearAuthServiceInitialization() async {
         let mockNetworkService = MockNetworkService()
-        let service = ClearAuthService(networkService: mockNetworkService)
+        let service = ClearAuthService(networking: mockNetworkService)
         
         let token = await service.getStoredToken(for: "test-client")
         #expect(token == nil)
@@ -250,7 +257,7 @@ struct NUT21Tests {
     @Test("ClearAuthService set and get token")
     func testClearAuthServiceTokenManagement() async throws {
         let mockNetworkService = MockNetworkService()
-        let service = ClearAuthService(networkService: mockNetworkService)
+        let service = ClearAuthService(networking: mockNetworkService)
         
         // Test that initially there's no token
         let initialToken = await service.getStoredToken(for: "test-client")
@@ -266,7 +273,7 @@ struct NUT21Tests {
     @Test("ClearAuthService OIDC config management")
     func testClearAuthServiceOIDCConfigManagement() async {
         let mockNetworkService = MockNetworkService()
-        let _ = ClearAuthService(networkService: mockNetworkService)
+        let _ = ClearAuthService(networking: mockNetworkService)
         let config = OpenIDConnectConfig(
             issuer: "https://auth.example.com",
             authorizationEndpoint: "https://auth.example.com/authorize",
@@ -289,7 +296,7 @@ struct NUT21Tests {
     @Test("ClearAuthService build authorization URL")
     func testClearAuthServiceBuildAuthorizationURL() async {
         let mockNetworkService = MockNetworkService()
-        let service = ClearAuthService(networkService: mockNetworkService)
+        let service = ClearAuthService(networking: mockNetworkService)
         let config = OpenIDConnectConfig(
             issuer: "https://auth.example.com",
             authorizationEndpoint: "https://auth.example.com/authorize",
@@ -441,7 +448,7 @@ struct NUT21Tests {
     @Test("Full OAuth2 flow simulation")
     func testFullOAuth2FlowSimulation() async throws {
         let mockNetworkService = MockNetworkService()
-        let service = ClearAuthService(networkService: mockNetworkService)
+        let service = ClearAuthService(networking: mockNetworkService)
         
         // Step 1: Create OIDC config
         let config = OpenIDConnectConfig(

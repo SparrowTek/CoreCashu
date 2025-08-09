@@ -11,11 +11,11 @@
 > **DO NOT USE WITH REAL FUNDS**
 
 [![Swift 6.0](https://img.shields.io/badge/Swift-6.0-orange.svg)](https://swift.org)
-[![Platforms](https://img.shields.io/badge/Platforms-iOS%20%7C%20macOS%20%7C%20tvOS%20%7C%20watchOS%20%7C%20visionOS-blue.svg)](https://developer.apple.com)
+[![Platforms](https://img.shields.io/badge/Platforms-iOS%20%7C%20macOS%20%7C%20tvOS%20%7C%20watchOS%20%7C%20visionOS%20%7C%20Linux-blue.svg)](https://swift.org)
 [![Swift Package Manager](https://img.shields.io/badge/Swift%20Package%20Manager-compatible-brightgreen.svg)](https://github.com/apple/swift-package-manager)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-A Swift package implementing the Cashu ecash protocol for iOS and Apple platforms. CoreCashu provides a type-safe API for integrating Cashu wallet functionality into your applications.
+A platform-agnostic Swift package implementing the Cashu ecash protocol. CoreCashu provides a type-safe API for integrating Cashu wallet functionality into your applications on any Swift-supported platform.
 
 ## Current Status
 
@@ -23,14 +23,15 @@ A Swift package implementing the Cashu ecash protocol for iOS and Apple platform
 - **Core Protocol**: NUT-00 through NUT-06, NUT-07, NUT-08, NUT-09, NUT-10, NUT-11, NUT-12, NUT-13, NUT-14, NUT-15, NUT-16, NUT-17, NUT-19, NUT-20, NUT-22
 - **Wallet Operations**: Mint, melt, swap, send, receive
 - **Token Management**: V3/V4 token serialization, CBOR support
-- **Cryptography**: BDHKE, deterministic secrets, P2PK, HTLCs
+- **Cryptography**: BDHKE, deterministic secrets, P2PK, HTLCs, BIP39 mnemonic generation
 - **State Management**: Actor-based concurrency, thread safety
 - **Error Handling**: Comprehensive error types and recovery
+- **Platform Abstraction**: Protocol-based design for cross-platform support
+- **Authentication**: NUT-22 access token support
+- **Restoration**: Wallet restoration from mnemonic (NUT-13)
 
 ### 🚧 In Progress
-- **Security**: Keychain integration via Vault framework
-- **Authentication**: NUT-22 access token support
-- **Restoration**: Full wallet restoration from mnemonic
+- **Platform Integrations**: Native implementations for Keychain (Apple), file storage (Linux), etc.
 
 ### ❌ Not Implemented
 - **Advanced Features**: DLCs, subscription model
@@ -106,15 +107,20 @@ let config = WalletConfiguration(
     unit: "sat"
 )
 
-// Create a wallet
+// Option 1: Create a wallet with default implementations (in-memory storage)
 let wallet = await CashuWallet(configuration: config)
+
+// Option 2: Create a wallet with custom implementations for your platform
+let secureStore = MyPlatformSecureStore() // Implement SecureStore protocol
+let logger = MyPlatformLogger()           // Implement LoggerProtocol
+let customWallet = await CashuWallet(
+    configuration: config,
+    secureStore: secureStore,
+    logger: logger
+)
 
 // Initialize the wallet
 try await wallet.initialize()
-
-// (Optional) Enable console metrics for development
-logger.setMetricsSink(ConsoleMetricsSink())
-logger.configure(.debug)
 
 // Check balance
 let balance = try await wallet.balance
@@ -152,6 +158,60 @@ logger.metricIncrement("CoreCashu.example.counter", by: 1, tags: ["env": "dev"])
 ```
 
 Production apps should provide a custom sink that forwards to your telemetry (e.g., StatsD, OpenTelemetry).
+
+## Platform Abstraction
+
+CoreCashu is designed to be platform-agnostic. It provides protocols that can be implemented for any platform:
+
+### Protocol Abstractions
+
+```swift
+// Secure storage protocol for sensitive data
+public protocol SecureStore: Sendable {
+    func saveMnemonic(_ mnemonic: String) async throws
+    func loadMnemonic() async throws -> String?
+    func saveSeed(_ seed: Data) async throws
+    func loadSeed() async throws -> Data?
+    func saveAccessToken(_ token: String, for clientId: String) async throws
+    func loadAccessToken(for clientId: String) async throws -> String?
+    func deleteAll() async throws
+}
+
+// Logging protocol for debugging and monitoring
+public protocol LoggerProtocol: Sendable {
+    func debug(_ message: String, file: String, function: String, line: Int)
+    func info(_ message: String, file: String, function: String, line: Int)
+    func warning(_ message: String, file: String, function: String, line: Int)
+    func error(_ message: String, file: String, function: String, line: Int)
+}
+
+// WebSocket protocol for real-time communication
+public protocol WebSocketClientProtocol: Sendable {
+    func connect() async throws
+    func disconnect() async
+    func send(_ message: String) async throws
+    func receive() async throws -> String
+}
+```
+
+### Platform-Specific Implementations
+
+For Apple platforms, you might use:
+- Keychain for `SecureStore`
+- os.log for `LoggerProtocol`
+- URLSession for `WebSocketClientProtocol`
+
+For Linux, you might use:
+- File system with encryption for `SecureStore`
+- Custom file logging for `LoggerProtocol`
+- SwiftNIO for `WebSocketClientProtocol`
+
+### Default Implementations
+
+CoreCashu provides default implementations for development and testing:
+- `InMemorySecureStore` - Non-persistent storage for testing
+- `ConsoleLogger` - Simple console output logging
+- `NoOpWebSocketClient` - No-operation WebSocket for offline testing
 
 ## Advanced Features
 
@@ -214,19 +274,25 @@ Missing security features:
 
 ## Platform Support
 
+### Apple Platforms
 - iOS 17.0+
-- macOS 14.0+
+- macOS 15.0+
 - tvOS 17.0+
 - watchOS 10.0+
-- visionOS 2.0+
+- visionOS 1.0+
+
+### Other Platforms
+- Linux (Ubuntu 20.04+, other distributions with Swift 6.0 support)
+- Windows (experimental, with Swift 6.0 toolchain)
 
 ## Dependencies
 
 - [swift-secp256k1](https://github.com/21-DOT-DEV/swift-secp256k1) - Elliptic curve cryptography
 - [BigInt](https://github.com/attaswift/BigInt) - Large number arithmetic
-- [BitcoinDevKit](https://github.com/bitcoindevkit/bdk-swift) - Bitcoin functionality
-- [CryptoSwift](https://github.com/krzyzanowskim/CryptoSwift) - Additional cryptographic functions
+- [CryptoSwift](https://github.com/krzyzanowskim/CryptoSwift) - Cryptographic functions
 - [SwiftCBOR](https://github.com/valpackett/SwiftCBOR) - CBOR encoding/decoding
+
+Note: CoreCashu includes a built-in BIP39 implementation for cross-platform mnemonic generation and wallet recovery.
 
 ## Testing
 

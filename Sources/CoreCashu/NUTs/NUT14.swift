@@ -232,7 +232,7 @@ extension HTLCWitness {
     ) throws -> HTLCWitness {
         var signatureStrings: [String] = []
         
-        for (privateKey, message) in signatures {
+        for (_, message) in signatures {
             // Create signature using P256K
             guard let messageData = message.data(using: .utf8) else {
                 throw CashuError.invalidSignature("Invalid message encoding")
@@ -263,7 +263,7 @@ extension HTLCWitness {
     ) throws -> HTLCWitness {
         var signatureStrings: [String] = []
         
-        for (privateKey, message) in signatures {
+        for (_, message) in signatures {
             // Create signature using P256K
             guard let messageData = message.data(using: .utf8) else {
                 throw CashuError.invalidSignature("Invalid message encoding")

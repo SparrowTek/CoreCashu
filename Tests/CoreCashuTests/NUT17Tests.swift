@@ -347,7 +347,7 @@ struct NUT17Tests {
     @Test("WebSocketClient initialization")
     func testWebSocketClientInitialization() async throws {
         let url = URL(string: "wss://mint.example.com/v1/ws")!
-        let client = WebSocketClient(url: url)
+        let client = NUT17WebSocketClient(url: url)
         
         // Client should be created successfully
         #expect(Bool(true))

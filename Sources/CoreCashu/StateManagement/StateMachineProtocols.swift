@@ -116,17 +116,17 @@ public actor StateObserverManager {
     private var observers: [WeakObserver] = []
     
     private struct WeakObserver {
-        weak var observer: WalletStateObserver?
+        weak var observer: (any WalletStateObserver)?
     }
     
     public init() {}
     
-    public func addObserver(_ observer: WalletStateObserver) {
+    public func addObserver(_ observer: any WalletStateObserver) {
         observers.append(WeakObserver(observer: observer))
         cleanupObservers()
     }
     
-    public func removeObserver(_ observer: WalletStateObserver) {
+    public func removeObserver(_ observer: any WalletStateObserver) {
         observers.removeAll { $0.observer === observer }
     }
     

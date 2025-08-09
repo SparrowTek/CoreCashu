@@ -967,33 +967,20 @@ public actor CashuWallet {
     /// - Parameter strength: Strength in bits (128, 160, 192, 224, or 256)
     /// - Returns: BIP39 mnemonic phrase
     public static func generateMnemonic(strength: Int = 128) throws -> String {
-        // Validate strength
-        guard [128, 160, 192, 224, 256].contains(strength) else {
+        // Convert int strength to BIP39.Strength enum
+        guard let bip39Strength = BIP39.Strength(rawValue: strength) else {
             throw CashuError.invalidMnemonic
         }
         
-        // TODO: Replace with cross-platform BIP39 implementation
-        // This would generate a mnemonic with the appropriate word count:
-        // - 128 bits = 12 words
-        // - 160 bits = 15 words
-        // - 192 bits = 18 words
-        // - 224 bits = 21 words
-        // - 256 bits = 24 words
-        return "TODO: Implement BIP39 mnemonic generation for \(strength) bits"
+        // Generate mnemonic using BIP39 implementation
+        return try BIP39.generateMnemonic(strength: bip39Strength)
     }
     
     /// Validate a mnemonic phrase
     /// - Parameter mnemonic: The mnemonic phrase to validate
     /// - Returns: True if valid
     public static func validateMnemonic(_ mnemonic: String) -> Bool {
-        // TODO: Replace with cross-platform BIP39 implementation
-        // do {
-        //     _ = try Mnemonic.fromString(mnemonic: mnemonic)
-        //     return true
-        // } catch {
-        //     return false
-        // }
-        return true // Temporary: accept all mnemonics
+        return BIP39.validateMnemonic(mnemonic)
     }
     
     /// Initialize wallet from secure store (restore existing wallet)

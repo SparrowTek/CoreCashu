@@ -34,6 +34,9 @@ let package = Package(
                 .product(name: "SwiftCBOR", package: "SwiftCBOR"),
                 // Platform-specific dependencies removed
             ],
+            resources: [
+                .copy("Resources/bip39-english.txt")
+            ],
             swiftSettings: [
                 .enableUpcomingFeature("ExistentialAny"),
                 .enableUpcomingFeature("IsolatedDefaultValues"),

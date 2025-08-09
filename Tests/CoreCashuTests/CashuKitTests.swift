@@ -2,7 +2,7 @@ import Testing
 @testable import CoreCashu
 
 @Test
-func tokenUtils() throws {
+func testCashuTokenUtils() throws {
     // Create a test token
     let secret = CashuKeyUtils.generateRandomSecret()
     let (unblindedToken, _) = try CashuBDHKEProtocol.executeProtocol(secret: secret)
@@ -25,7 +25,7 @@ func tokenUtils() throws {
 }
 
 @Test
-func keyUtils() throws {
+func testCashuKeyUtils() throws {
     // Test secret generation
     let secret = CashuKeyUtils.generateRandomSecret()
     let isValidSecret = try CashuKeyUtils.validateSecret(secret)

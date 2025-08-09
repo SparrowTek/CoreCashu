@@ -32,11 +32,8 @@ public struct DeterministicSecretDerivation: Sendable {
     
     public init(mnemonic: String, passphrase: String = "") throws {
         // Validate mnemonic
-        // TODO: Replace with cross-platform BIP39 validation
-        // _ = try Mnemonic.fromString(mnemonic: mnemonic)
-        // For now, do basic validation
-        let words = mnemonic.split(separator: " ")
-        guard [12, 15, 18, 21, 24].contains(words.count) else {
+        // Validate using BIP39 implementation
+        guard BIP39.validateMnemonic(mnemonic) else {
             throw CashuError.invalidMnemonic
         }
         

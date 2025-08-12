@@ -325,7 +325,6 @@ CoreCashu is released under the MIT License. See [LICENSE](LICENSE) for details.
 
 - [Cashu Protocol](https://docs.cashu.space) - The underlying ecash protocol
 - [cashubtc/nuts](https://github.com/cashubtc/nuts) - Protocol specifications
-- [cashubtc/cdk](https://github.com/cashubtc/cdk) - Reference implementation
 
 ---
 

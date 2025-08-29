@@ -99,6 +99,9 @@ public actor CashuWallet {
     // Logging
     private let logger: any LoggerProtocol
     
+    // Networking
+    private let networking: any Networking
+    
     // MARK: - Initialization
     
     /// Initialize a new Cashu wallet
@@ -107,12 +110,14 @@ public actor CashuWallet {
     ///   - proofStorage: Optional custom proof storage (defaults to in-memory)
     ///   - counterStorage: Optional custom counter storage
     ///   - secureStore: Optional secure storage implementation (defaults to in-memory)
+    ///   - networking: Optional networking implementation (defaults to URLSession.shared)
     ///   - logger: Optional logger implementation (defaults to console logger)
     public init(
         configuration: WalletConfiguration,
         proofStorage: (any ProofStorage)? = nil,
         counterStorage: (any KeysetCounterStorage)? = nil,
         secureStore: (any SecureStore)? = nil,
+        networking: (any Networking)? = nil,
         logger: (any LoggerProtocol)? = nil
     ) async {
         self.configuration = configuration
@@ -122,6 +127,9 @@ public actor CashuWallet {
         
         // Use provided secure store or default to in-memory
         self.secureStore = secureStore
+        
+        // Use provided networking or default to URLSession.shared
+        self.networking = networking ?? URLSession.shared
         
         // Use provided logger or default to console logger
         self.logger = logger ?? ConsoleLogger()
@@ -141,7 +149,7 @@ public actor CashuWallet {
         unit: String = "sat"
     ) async {
         let config = WalletConfiguration(mintURL: mintURL, unit: unit)
-        await self.init(configuration: config)
+        await self.init(configuration: config, networking: URLSession.shared)
     }
     
     /// Initialize wallet with mnemonic phrase (NUT-13)
@@ -152,6 +160,7 @@ public actor CashuWallet {
     ///   - proofStorage: Optional custom proof storage
     ///   - counterStorage: Optional custom counter storage
     ///   - secureStore: Optional secure storage implementation
+    ///   - networking: Optional networking implementation (defaults to URLSession.shared)
     ///   - logger: Optional logger implementation (defaults to console logger)
     public init(
         configuration: WalletConfiguration,
@@ -160,6 +169,7 @@ public actor CashuWallet {
         proofStorage: (any ProofStorage)? = nil,
         counterStorage: (any KeysetCounterStorage)? = nil,
         secureStore: (any SecureStore)? = nil,
+        networking: (any Networking)? = nil,
         logger: (any LoggerProtocol)? = nil
     ) async throws {
         self.configuration = configuration
@@ -169,6 +179,9 @@ public actor CashuWallet {
         
         // Use provided secure store
         self.secureStore = secureStore
+        
+        // Use provided networking or default to URLSession.shared
+        self.networking = networking ?? URLSession.shared
         
         // Use provided logger or default to console logger
         self.logger = logger ?? ConsoleLogger()
@@ -1284,7 +1297,7 @@ public actor CashuWallet {
         
         // Initialize NUT-22 access token service
         // Create a simple network service adapter
-        let networkService = SimpleNetworkService(baseURL: configuration.mintURL)
+        let networkService = SimpleNetworkService(baseURL: configuration.mintURL, networking: networking)
         let accessToken = AccessTokenService(
             networkService: networkService,
             keyExchangeService: keyExchange
@@ -1527,9 +1540,11 @@ public struct WalletStatistics: Sendable {
 /// Simple network service implementation for CashuWallet
 private struct SimpleNetworkService: NetworkService {
     let baseURL: String
+    let networking: any Networking
     
-    init(baseURL: String) {
+    init(baseURL: String, networking: any Networking) {
         self.baseURL = baseURL
+        self.networking = networking
     }
     
     func execute<T: CashuCodabale>(method: String, path: String, payload: Data?) async throws -> T {
@@ -1543,7 +1558,7 @@ private struct SimpleNetworkService: NetworkService {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = payload
         
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await networking.data(for: request, delegate: nil)
         
         guard let httpResponse = response as? HTTPURLResponse else {
             throw CashuError.invalidResponse

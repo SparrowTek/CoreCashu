@@ -88,6 +88,7 @@ public actor CashuWallet {
     private var currentKeysets: [String: Keyset] = [:]
     private var currentKeysetInfos: [String: KeysetInfo] = [:]
     private var walletState: WalletState = .uninitialized
+    private var capabilityManager: MintFeatureCapabilityManager?
     
     // NUT-13: Deterministic secrets
     private var deterministicDerivation: DeterministicSecretDerivation?
@@ -258,6 +259,11 @@ public actor CashuWallet {
             }
             
             logger.info("Mint info fetched successfully: \(mintInfo.name ?? "Unknown")")
+            
+            // Initialize capability manager
+            if let mintURL = URL(string: configuration.mintURL) {
+                capabilityManager = MintFeatureCapabilityManager(mintInfo: mintInfo, mintURL: mintURL)
+            }
             
             // Fetch active keysets
             logger.debug("Syncing keysets")
@@ -840,7 +846,14 @@ public actor CashuWallet {
     /// Execute the checkstate API call
     private func executeCheckState(_ request: PostCheckStateRequest) async throws -> PostCheckStateResponse {
         guard supportsStateCheck() else {
-            throw CashuError.unsupportedOperation("State check (NUT-07) is not supported by this mint")
+            if let capabilityManager = capabilityManager {
+                throw capabilityManager.unsupportedOperationError(
+                    capability: .stateCheck,
+                    operation: "Check token state"
+                )
+            } else {
+                throw CashuError.unsupportedOperation("State check (NUT-07) is not supported by this mint")
+            }
         }
         
         // Check state service is always available since it's initialized in setupServices()
@@ -1225,7 +1238,14 @@ public actor CashuWallet {
     ) async throws -> [BlindSignature] {
         // Check if mint supports NUT-09
         guard currentMintInfo?.isNUTSupported("9") ?? false else {
-            throw CashuError.unsupportedOperation("Restore functionality (NUT-09) is not supported by this mint")
+            if let capabilityManager = capabilityManager {
+                throw capabilityManager.unsupportedOperationError(
+                    capability: .restore,
+                    operation: "Restore proofs from backup"
+                )
+            } else {
+                throw CashuError.unsupportedOperation("Restore functionality (NUT-09) is not supported by this mint")
+            }
         }
         
         // Create restore service
@@ -1507,6 +1527,95 @@ public actor CashuWallet {
         }
         
         return denominations.sorted()
+    }
+}
+
+// MARK: - Feature Probing API
+
+public extension CashuWallet {
+    /// Check if a specific capability is supported by the mint
+    func isCapabilitySupported(_ capability: MintFeatureCapability) -> Bool {
+        return capabilityManager?.isSupported(capability) ?? false
+    }
+    
+    /// Get all supported capabilities
+    func getSupportedCapabilities() -> Set<MintFeatureCapability> {
+        return capabilityManager?.supportedCapabilities() ?? []
+    }
+    
+    /// Get missing required capabilities
+    func getMissingRequiredCapabilities() -> Set<MintFeatureCapability> {
+        return capabilityManager?.missingRequiredCapabilities() ?? []
+    }
+    
+    /// Create a feature probe for a specific capability
+    func createFeatureProbe(for capability: MintFeatureCapability) -> (any FeatureProbe)? {
+        guard let capabilityManager = capabilityManager else { return nil }
+        let factory = FeatureProbeFactory(capabilityManager: capabilityManager)
+        return factory.probe(for: capability)
+    }
+    
+    /// Execute an operation with capability checking and fallback
+    func executeWithCapabilityCheck<T: Sendable>(
+        capability: MintFeatureCapability,
+        operation: @Sendable () async throws -> T,
+        fallback: (@Sendable () async throws -> T)? = nil
+    ) async throws -> T {
+        guard let probe = createFeatureProbe(for: capability) else {
+            // No capability manager, try the operation anyway
+            return try await operation()
+        }
+        
+        if await probe.isAvailable() {
+            return try await operation()
+        } else if let fallback = fallback {
+            logger.info("Capability \(capability.name) not available, using fallback")
+            return try await fallback()
+        } else {
+            if let capabilityManager = capabilityManager {
+                throw capabilityManager.unsupportedOperationError(
+                    capability: capability,
+                    operation: nil
+                )
+            } else {
+                throw CashuError.unsupportedOperation("Capability \(capability.name) not supported")
+            }
+        }
+    }
+    
+    /// Get a detailed capability report
+    func getCapabilityReport() -> String {
+        guard let capabilityManager = capabilityManager else {
+            return "Capability information not available"
+        }
+        
+        let supported = capabilityManager.supportedCapabilities()
+        let allCapabilities: [MintFeatureCapability] = [
+            .mintInfo, .keysets, .mintTokens, .meltTokens, .swap,
+            .stateCheck, .restore, .p2pk, .dleq, .deterministicSecrets,
+            .htlc, .mpp, .overpayOutputSelection, .websockets,
+            .paymentRequests, .singleUse, .signatureMintQuotes,
+            .preMint, .accessTokenAuth, .proofOfReserves, .http402
+        ]
+        
+        var report = "Mint Capability Report\n"
+        report += "=====================\n"
+        report += "Mint URL: \(configuration.mintURL)\n\n"
+        report += "Required Capabilities:\n"
+        
+        let required: [MintFeatureCapability] = [.mintInfo, .keysets, .mintTokens, .meltTokens, .swap]
+        for cap in required {
+            let status = supported.contains(cap) ? "✓" : "✗"
+            report += "  \(status) NUT-\(cap.nutID): \(cap.name)\n"
+        }
+        
+        report += "\nOptional Capabilities:\n"
+        for cap in allCapabilities where !required.contains(cap) {
+            let status = supported.contains(cap) ? "✓" : "✗"
+            report += "  \(status) NUT-\(cap.nutID): \(cap.name)\n"
+        }
+        
+        return report
     }
 }
 

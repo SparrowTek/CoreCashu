@@ -66,8 +66,57 @@ public enum WalletState: Sendable, Equatable {
 
 // MARK: - Cashu Wallet
 
-/// Main Cashu wallet implementation
-/// Thread-safe actor that manages all wallet operations
+/// The main Cashu wallet implementation for managing eCash operations.
+///
+/// `CashuWallet` is a thread-safe actor that provides a complete interface for interacting
+/// with Cashu mints. It handles all aspects of the eCash lifecycle including minting,
+/// melting, sending, and receiving tokens.
+///
+/// ## Overview
+///
+/// The wallet manages:
+/// - **Mint Communication**: Connects to and interacts with Cashu mints
+/// - **Token Management**: Creates, stores, and validates eCash proofs
+/// - **Transaction Processing**: Handles minting, melting, and swapping operations
+/// - **State Management**: Tracks wallet state and transaction history
+/// - **Security**: Integrates with secure storage for sensitive data
+///
+/// ## Usage
+///
+/// Create and initialize a wallet:
+///
+/// ```swift
+/// let config = WalletConfiguration(
+///     mintURL: "https://mint.example.com",
+///     unit: .sat
+/// )
+/// 
+/// let wallet = await CashuWallet(configuration: config)
+/// try await wallet.initializeWallet()
+/// ```
+///
+/// ## Topics
+///
+/// ### Configuration
+/// - ``WalletConfiguration``
+/// - ``initializeWallet()``
+///
+/// ### Token Operations
+/// - ``mint(quote:)``
+/// - ``melt(quote:proofs:)``
+/// - ``send(amount:proofs:)``
+/// - ``receive(token:)``
+///
+/// ### Balance and State
+/// - ``getTotalBalance()``
+/// - ``checkProofStates(_:)``
+/// - ``getAllProofs()``
+///
+/// - Note: All operations are performed asynchronously and may throw errors.
+/// Always handle errors appropriately when calling wallet methods.
+///
+/// - Important: The wallet actor ensures thread-safe access to all operations.
+/// Multiple concurrent operations are automatically serialized.
 public actor CashuWallet {
     
     // MARK: - Properties

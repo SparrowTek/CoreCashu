@@ -1,0 +1,117 @@
+@Tutorial(time: 10) {
+    @Intro(title: "Getting Started with CoreCashu") {
+        Learn how to create a Cashu wallet and perform basic eCash operations.
+        
+        @Image(source: cashu-logo.png, alt: "Cashu logo")
+    }
+    
+    @Section(title: "Create Your First Wallet") {
+        @ContentAndMedia {
+            Set up a basic Cashu wallet that can interact with mints.
+            
+            @Image(source: wallet-setup.png, alt: "Wallet setup diagram")
+        }
+        
+        @Steps {
+            @Step {
+                Import CoreCashu in your Swift file.
+                
+                @Code(name: "main.swift", file: 01-import.swift)
+            }
+            
+            @Step {
+                Create a wallet configuration with your mint's URL.
+                
+                @Code(name: "main.swift", file: 02-configuration.swift)
+            }
+            
+            @Step {
+                Initialize the wallet with the configuration.
+                
+                @Code(name: "main.swift", file: 03-initialize.swift)
+            }
+            
+            @Step {
+                Connect to the mint and sync keysets.
+                
+                @Code(name: "main.swift", file: 04-connect.swift)
+            }
+        }
+    }
+    
+    @Section(title: "Mint Your First Tokens") {
+        @ContentAndMedia {
+            Learn how to create eCash tokens from a Lightning payment.
+        }
+        
+        @Steps {
+            @Step {
+                Request a mint quote for the amount you want.
+                
+                @Code(name: "mint.swift", file: 05-request-quote.swift)
+            }
+            
+            @Step {
+                Pay the Lightning invoice provided by the mint.
+                
+                @Code(name: "mint.swift", file: 06-pay-invoice.swift)
+            }
+            
+            @Step {
+                Mint the tokens once payment is confirmed.
+                
+                @Code(name: "mint.swift", file: 07-mint-tokens.swift)
+            }
+        }
+    }
+    
+    @Section(title: "Send and Receive Tokens") {
+        @ContentAndMedia {
+            Transfer eCash tokens between wallets.
+        }
+        
+        @Steps {
+            @Step {
+                Create a token to send to another user.
+                
+                @Code(name: "transfer.swift", file: 08-send-token.swift)
+            }
+            
+            @Step {
+                Receive and process a token from another user.
+                
+                @Code(name: "transfer.swift", file: 09-receive-token.swift)
+            }
+        }
+    }
+    
+    @Assessments {
+        @MultipleChoice {
+            What is the first step when creating a Cashu wallet?
+            
+            @Choice(isCorrect: false) {
+                Generate a mnemonic seed phrase
+                
+                @Justification(reaction: "Incorrect") {
+                    While seed phrases are important for deterministic wallets, the first step is configuration.
+                }
+            }
+            
+            @Choice(isCorrect: true) {
+                Create a wallet configuration with mint URL
+                
+                @Justification(reaction: "Correct!") {
+                    The wallet needs to know which mint to connect to before it can operate.
+                }
+            }
+            
+            @Choice(isCorrect: false) {
+                Request tokens from the mint
+                
+                @Justification(reaction: "Incorrect") {
+                    You need to initialize the wallet first before requesting tokens.
+                }
+            }
+        }
+    }
+}

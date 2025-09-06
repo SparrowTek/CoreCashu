@@ -280,8 +280,8 @@ public actor WalletStateMachine {
         // Handle any side effects of state transitions
         switch event {
         case .errorOccurred(let error):
-            // Log error
-            print("Wallet error occurred: \(error)")
+            // Log error without sensitive details
+            // Use proper logger when available
             
         case .shutdown:
             // Clean up resources

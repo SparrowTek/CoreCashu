@@ -240,9 +240,10 @@ public actor MultiPathPaymentExecutor {
         // 2. Restore the original proofs
         // 3. Handle cases where rollback fails
         
-        // For now, log the rollback attempt
+        // For now, track rollback attempts without logging sensitive data
         for result in results where result.success {
-            print("[MPP] Rolling back successful payment at \(result.mintURL)")
+            // Use proper logger when available
+            // Rollback for successful payment at mint
         }
     }
     

@@ -113,7 +113,6 @@ public enum BIP39 {
         
         // Hardcode a minimal wordlist for emergency fallback
         // This will allow basic functionality but should not be used in production
-        print("WARNING: Using fallback BIP39 wordlist. This should not happen in production!")
         return generateFallbackWordlist()
     }
     

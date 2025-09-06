@@ -9,8 +9,7 @@ import Foundation
 import P256K
 import CryptoKit
 import CryptoSwift
-// TODO: Replace BitcoinDevKit with cross-platform BIP39 implementation
-// import BitcoinDevKit
+// Using BIP39 implementation from CoreCashu/Utils/BIP39.swift
 import BigInt
 
 // MARK: - NUT-13 Constants
@@ -37,7 +36,6 @@ public struct DeterministicSecretDerivation: Sendable {
             throw CashuError.invalidMnemonic
         }
         
-        // BDK doesn't expose seed generation directly, so we'll compute it ourselves
         // This follows BIP39 standard: PBKDF2 with HMAC-SHA512
         let seed = createSeedFromMnemonic(mnemonic: mnemonic, passphrase: passphrase)
         self.masterKey = createMasterKeyFromSeed(seed: seed)
@@ -94,7 +92,7 @@ public struct DeterministicSecretDerivation: Sendable {
     }
     
     private func derivePrivateKey(path: [UInt32]) throws -> Data {
-        // Convert path to BDK format
+        // Convert path to BIP32 format
         var pathString = "m"
         for index in path {
             if index & 0x80000000 != 0 {
@@ -104,7 +102,7 @@ public struct DeterministicSecretDerivation: Sendable {
             }
         }
         
-        // Use custom BIP32 derivation for now since BDK doesn't expose raw key derivation
+        // Use custom BIP32 derivation
         var key = masterKey
         for index in path {
             key = try deriveChildKeyCustom(parentKey: key, index: index)
@@ -262,7 +260,7 @@ public struct WalletRestoration: Sendable {
 
 // MARK: - BIP32 Helpers
 
-// Since BDK doesn't expose raw key derivation, we need these helper functions
+// Helper functions for BIP32 key derivation
 
 // Create seed from mnemonic following BIP39 standard
 private func createSeedFromMnemonic(mnemonic: String, passphrase: String) -> Data {

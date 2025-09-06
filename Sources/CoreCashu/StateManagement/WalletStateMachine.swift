@@ -279,9 +279,10 @@ public actor WalletStateMachine {
     private func handleSideEffects(for event: WalletMachineEvent, from oldState: WalletMachineState, to newState: WalletMachineState) async throws {
         // Handle any side effects of state transitions
         switch event {
-        case .errorOccurred(let error):
+        case .errorOccurred(_):
             // Log error without sensitive details
             // Use proper logger when available
+            break
             
         case .shutdown:
             // Clean up resources

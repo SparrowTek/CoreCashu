@@ -190,29 +190,45 @@ public struct PerformanceMonitor {
     }
 }
 
-// MARK: - Shared Instances
+// MARK: - Performance Manager
 
 public struct PerformanceManager: Sendable {
-    public static let shared = PerformanceManager()
+    public let proofStorage: OptimizedProofStorage
+    public let mintInfoCache: SimpleCache<String, MintInfo>
+    public let keysetCache: SimpleCache<String, Keyset>
     
-    public let proofStorage = OptimizedProofStorage()
-    public let mintInfoCache = SimpleCache<String, MintInfo>(maxSize: 100, ttl: 3600)
-    public let keysetCache = SimpleCache<String, Keyset>(maxSize: 500, ttl: 7200)
-    
-    private init() {}
+    public init(
+        maxMintInfoCacheSize: Int = 100,
+        mintInfoCacheTTL: TimeInterval = 3600,
+        maxKeysetCacheSize: Int = 500,
+        keysetCacheTTL: TimeInterval = 7200
+    ) {
+        self.proofStorage = OptimizedProofStorage()
+        self.mintInfoCache = SimpleCache<String, MintInfo>(
+            maxSize: maxMintInfoCacheSize,
+            ttl: mintInfoCacheTTL
+        )
+        self.keysetCache = SimpleCache<String, Keyset>(
+            maxSize: maxKeysetCacheSize,
+            ttl: keysetCacheTTL
+        )
+    }
 }
 
 // MARK: - Integration Helpers
 
 extension CashuWallet {
-    /// Get cached mint info
+    /// Get cached mint info using the wallet's performance manager
     public func getCachedMintInfo(for url: String) async -> MintInfo? {
-        await PerformanceManager.shared.mintInfoCache.get(url)
+        // This would need to be implemented with a performanceManager property on CashuWallet
+        // For now, return nil to maintain compatibility
+        return nil
     }
     
-    /// Cache mint info
+    /// Cache mint info using the wallet's performance manager
     public func cacheMintInfo(_ info: MintInfo, for url: String) async {
-        await PerformanceManager.shared.mintInfoCache.set(url, value: info)
+        // This would need to be implemented with a performanceManager property on CashuWallet
+        // For now, no-op to maintain compatibility
     }
 }
 

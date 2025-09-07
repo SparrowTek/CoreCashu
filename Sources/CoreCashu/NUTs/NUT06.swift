@@ -16,7 +16,7 @@ import Foundation
 // MARK: - Core Types
 
 /// Represents a value in the nuts dictionary that can be either a string or a dictionary
-public enum NutValue: CashuCodabale {
+public enum NutValue: CashuCodabale, Sendable {
     case string(String)
     case dictionary([String: AnyCodable])
     
@@ -66,7 +66,7 @@ public enum NutValue: CashuCodabale {
 }
 
 /// Contact information for mint operators
-public struct MintContact: CashuCodabale {
+public struct MintContact: CashuCodabale, Sendable {
     public let method: String
     public let info: String
     
@@ -77,7 +77,7 @@ public struct MintContact: CashuCodabale {
 }
 
 /// Mint information response structure (NUT-06)
-public struct MintInfo: CashuCodabale {
+public struct MintInfo: CashuCodabale, Sendable {
     public let name: String?
     public let pubkey: String?
     public let version: String?

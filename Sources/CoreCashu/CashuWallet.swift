@@ -7,8 +7,6 @@
 
 import Foundation
 import P256K
-// TODO: Replace BitcoinDevKit with cross-platform BIP39 implementation
-// import BitcoinDevKit
 
 // MARK: - Wallet Configuration
 

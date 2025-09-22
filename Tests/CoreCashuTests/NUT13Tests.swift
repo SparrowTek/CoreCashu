@@ -9,8 +9,6 @@ import Testing
 @testable import CoreCashu
 import Foundation
 import P256K
-// TODO: Replace BitcoinDevKit with cross-platform BIP39 implementation
-// import BitcoinDevKit
 
 @Suite("NUT-13 Tests")
 struct NUT13Tests {
@@ -44,6 +42,18 @@ struct NUT13Tests {
         // Invalid word
         let invalidWord = "abandon ability able about above absent absorb abstract absurd abuse access invalid"
         #expect(CashuWallet.validateMnemonic(invalidWord) == false)
+    }
+
+    @Test("Deterministic mnemonic generation via entropy override")
+    func testDeterministicMnemonicGeneration() throws {
+        SecureRandom.installGenerator { count in
+            Data(repeating: 0x00, count: count)
+        }
+        defer { SecureRandom.resetGenerator() }
+        
+        let mnemonic = try CashuWallet.generateMnemonic(strength: 128)
+        let expected = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+        #expect(mnemonic == expected)
     }
     
     @Test("Keyset ID to integer conversion")
@@ -138,7 +148,24 @@ struct NUT13Tests {
             #expect(blindedMessage.id == keysetID)
         }
     }
-    
+
+    @Test("Wallet restoration from secure store")
+    func testRestoreFromSecureStore() async throws {
+        let mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+        let secureStore = InMemorySecureStore()
+        try await secureStore.saveMnemonic(mnemonic)
+        
+        let configuration = WalletConfiguration(mintURL: "https://test.mint.example.com")
+        let wallet = try await CashuWallet.restoreFromSecureStore(
+            configuration: configuration,
+            secureStore: secureStore
+        )
+        
+        #expect(await wallet.state == .uninitialized)
+        let loaded = try await secureStore.loadMnemonic()
+        #expect(loaded == mnemonic)
+    }
+
     
     @Test("Mnemonic validation in wallet")
     func testWalletMnemonicValidation() {

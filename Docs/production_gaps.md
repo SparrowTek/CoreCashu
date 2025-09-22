@@ -3,7 +3,7 @@
 Generated on 2025-01-14 from repository sweep of TODO/FIXME annotations in `Sources` and `Tests`.
 
 ## CoreCashu Sources
-- [ ] `Sources/CoreCashu/CashuWallet.swift:10` – Replace BitcoinDevKit with cross-platform BIP39 implementation
+- [x] `Sources/CoreCashu/CashuWallet.swift:10` – Replace BitcoinDevKit with cross-platform BIP39 implementation
 - [ ] `Sources/CoreCashu/CashuWallet.swift:296` – Add metrics hook `wallet.initialize.start`
 - [ ] `Sources/CoreCashu/CashuWallet.swift:297` – Implement performance logging during wallet initialization
 - [ ] `Sources/CoreCashu/CashuWallet.swift:323` – Add metrics hook `wallet.initialize.success`
@@ -21,8 +21,7 @@ Generated on 2025-01-14 from repository sweep of TODO/FIXME annotations in `Sour
 
 ## CoreCashu Tests
 - [ ] `Tests/CoreCashuTests/IntegrationTests.swift:16` – Unskip or implement integration test to pass
-- [ ] `Tests/CoreCashuTests/NUT13Tests.swift:12` – Replace BitcoinDevKit with cross-platform BIP39 implementation
+- [x] `Tests/CoreCashuTests/NUT13Tests.swift:12` – Replace BitcoinDevKit with cross-platform BIP39 implementation
 - [ ] `Tests/CoreCashuTests/NUT13Tests.swift:266` – Implement full BIP32 specification compliance
 - [ ] `Tests/CoreCashuTests/NUT13Tests.swift:297` – Implement full BIP32 specification compliance
 - [ ] `Tests/CoreCashuTests/NUT13Tests.swift:326` – Implement full BIP32 specification compliance
-

@@ -49,18 +49,12 @@ struct MPPIntegrationTests {
         )
         
         // The actual network call would fail with test URL, but we're testing the structure
-        do {
+        await #expect(throws: Error.self) {
             _ = try await wallet.requestMeltQuoteWithMPP(
                 invoice: "lnbc100n1p3ehk5pp5xgxzcks5jtpj9xw7ugeheyt6ccnz4fkjp03",
                 partialAmountMsat: 50000,
                 unit: "sat"
             )
-            #expect(Bool(false), "Should have thrown an error with test URL")
-        } catch {
-            // Expected to fail with network error or similar
-            print("Error: \(error)")
-            print("Localized: \(error.localizedDescription)")
-            #expect(true) // Any error is expected since we're using a test URL
         }
     }
     
@@ -80,10 +74,10 @@ struct MPPIntegrationTests {
         #expect(await endpoint.httpMethod == .post)
         
         // Verify task encoding
-        if case .requestParameters = await endpoint.task {
-            // The encoding should handle the MPP request properly
-            #expect(Bool(true))
-        } else {
+        switch await endpoint.task {
+        case .requestParameters:
+            break
+        default:
             #expect(Bool(false), "Expected requestParameters task")
         }
         

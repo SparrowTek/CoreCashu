@@ -7,18 +7,44 @@ import Security
 public actor KeychainSecureStore: SecureStore {
 
     public struct Configuration: Sendable {
+        public enum AccessControlPolicy: Sendable {
+            case userPresence
+            case biometryAny
+            case biometryCurrentSet
+            case devicePasscode
+            case custom(rawValue: UInt)
+
+            fileprivate var flags: SecAccessControlCreateFlags {
+                switch self {
+                case .userPresence:
+                    return [.userPresence]
+                case .biometryAny:
+                    return [.userPresence, .biometryAny]
+                case .biometryCurrentSet:
+                    return [.userPresence, .biometryCurrentSet]
+                case .devicePasscode:
+                    return [.devicePasscode]
+                case .custom(let rawValue):
+                    return SecAccessControlCreateFlags(rawValue: rawValue)
+                }
+            }
+        }
+
         public let servicePrefix: String
         public let accessGroup: String?
         public let accessibility: String
+        public let accessControl: AccessControlPolicy?
 
         public init(
             servicePrefix: String = "cashu.core",
             accessGroup: String? = nil,
-            accessibility: String = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly as String
+            accessibility: String = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly as String,
+            accessControl: AccessControlPolicy? = nil
         ) {
             self.servicePrefix = servicePrefix
             self.accessGroup = accessGroup
             self.accessibility = accessibility
+            self.accessControl = accessControl
         }
     }
 
@@ -171,7 +197,11 @@ public actor KeychainSecureStore: SecureStore {
         var attributes = baseAttributes(for: kind)
         attributes[kSecValueData as String] = data
 
-        attributes[kSecAttrAccessible as String] = configuration.accessibility as CFString
+        if let policy = configuration.accessControl {
+            attributes[kSecAttrAccessControl as String] = try makeAccessControl(for: policy)
+        } else {
+            attributes[kSecAttrAccessible as String] = configuration.accessibility as CFString
+        }
 
         let status = SecItemAdd(attributes as CFDictionary, nil)
         if status == errSecDuplicateItem {
@@ -209,6 +239,20 @@ public actor KeychainSecureStore: SecureStore {
         guard status == errSecSuccess else {
             throw mapError(status: status, category: .deletion, context: "delete \(kind.logName)")
         }
+    }
+
+    private func makeAccessControl(for policy: Configuration.AccessControlPolicy) throws -> SecAccessControl {
+        var error: Unmanaged<CFError>?
+        guard let control = SecAccessControlCreateWithFlags(
+            nil,
+            configuration.accessibility as CFString,
+            policy.flags,
+            &error
+        ) else {
+            let description = error?.takeRetainedValue().localizedDescription ?? "Unknown failure"
+            throw SecureStoreError.storeFailed("access control creation failed: \(description)")
+        }
+        return control
     }
 
     private func baseAttributes(for kind: ItemKind) -> [String: Any] {

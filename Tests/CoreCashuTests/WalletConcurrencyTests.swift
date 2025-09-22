@@ -53,8 +53,15 @@ struct WalletConcurrencyTests {
             }
         }
         
-        // Check wallet state is consistent
-        #expect(await wallet.state != nil)
+        // Check wallet did not enter an error state during concurrent receives
+        let state = await wallet.state
+        let isHealthy: Bool
+        if case .error = state {
+            isHealthy = false
+        } else {
+            isHealthy = true
+        }
+        #expect(isHealthy, "Wallet entered error state: \(state)")
     }
     
     @Test("Task cancellation handling")
@@ -68,12 +75,8 @@ struct WalletConcurrencyTests {
         // Cancel immediately
         task.cancel()
         
-        do {
+        await #expect(throws: CancellationError.self) {
             try await task.value
-            // May succeed if fast enough
-        } catch {
-            // Cancellation or error is expected
-            #expect(true)
         }
     }
     

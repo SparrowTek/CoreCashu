@@ -220,11 +220,15 @@ struct NUT14Tests {
                 pubkeys: []
             )
             #expect(Bool(false), "Should have thrown an error")
-        } catch CashuError.invalidPreimage {
-            // Expected
-            #expect(true)
         } catch {
-            #expect(Bool(false), "Wrong error type")
+            let matchesError: Bool
+            if let cashuError = error as? CashuError,
+               case .invalidPreimage = cashuError {
+                matchesError = true
+            } else {
+                matchesError = false
+            }
+            #expect(matchesError, "Expected invalid preimage error, got: \(error)")
         }
         
         // Test invalid proof type
@@ -249,11 +253,15 @@ struct NUT14Tests {
                 witness: HTLCWitness(preimage: "", signatures: [])
             )
             #expect(Bool(false), "Should have thrown an error")
-        } catch CashuError.invalidSecret {
-            // Expected
-            #expect(true)
         } catch {
-            #expect(Bool(false), "Wrong error type")
+            let matchesError: Bool
+            if let cashuError = error as? CashuError,
+               case .invalidSecret = cashuError {
+                matchesError = true
+            } else {
+                matchesError = false
+            }
+            #expect(matchesError, "Expected invalid secret error, got: \(error)")
         }
     }
     

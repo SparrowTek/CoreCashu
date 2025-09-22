@@ -23,13 +23,14 @@
 - Internal helpers wrap Keychain queries via `SecItemAdd`, `SecItemCopyMatching`, `SecItemUpdate`, `SecItemDelete`.
 - Use service identifiers namespaced under `"cashu.core"` plus item-specific suffixes (e.g., `"cashu.core.mnemonic"`).
 - Encode complex payloads (token dictionaries/lists) as JSON before storing; enforce `.utf8` serialization with envelope struct to allow future versioning.
-- Provide initializer accepting optional `accessGroup`; plumb configurable `SecAccessControl` in a follow-up revision. Default to `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` for now.
+- Provide initializer accepting optional `accessGroup` and `AccessControlPolicy` (user presence, biometry, passcode, or custom flags). Default to `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` without additional prompts.
 
 ## 5. Security & Access Control
 - Store mnemonics/seeds as `kSecClassKey` or `kSecClassGenericPassword` items with `kSecAttrSynchronizable` disabled.
-- Configure `SecAccessControl` with `.biometryAny` or `.userPresence` opt-in (TODO); default to no UI requirement for background usage until that lands.
+- Configure `SecAccessControl` with `.biometryAny`/`.biometryCurrentSet`/`.userPresence` when requested; default to no UI requirement for background usage until developers opt in.
 - Ensure items are set with `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` to prevent iCloud sync and limit to device.
 - Consider `SecItemDelete` zeroization limitations; rely on Keychain semantics plus memory scrubbing before submission.
+- `accessGroup` usage requires the Keychain Sharing entitlement; biometrics/user presence rely on Face ID/Touch ID entitlements when deployed in production apps.
 
 ## 6. Error Handling & Logging
 - Map common `OSStatus` codes to `SecureStoreError` cases (e.g., `.itemNotFound`, `.duplicateItem`, `.permissionDenied`).
@@ -46,6 +47,12 @@
 - Update wallet factory defaults: prefer `KeychainSecureStore` on Apple platforms, fall back to `FileSecureStore`/`InMemorySecureStore` elsewhere.
 - Mark `InMemorySecureStore` as deprecated for production via availability annotations once Keychain version lands.
 - Update README security section with new guidance and add manual testing checklist to `Docs/operational_checklist.md` (future work).
+
+## 11. Manual Validation Checklist
+- Build a sample app with Keychain Sharing entitlement (if using custom `accessGroup`) and verify a mnemonic round-trip succeeds on device and simulator.
+- When `AccessControlPolicy.userPresence` or biometric policies are enabled, confirm the system prompts before reads and that background tasks without UI receive `errSecInteractionNotAllowed`.
+- Run `security find-generic-password -s <service>` to ensure namespace isolation and absence of plaintext secrets.
+- Execute the Swift Testing suite (`KeychainSecureStore` tests) on both simulator and physical hardware to confirm no stale state leaks between runs.
 
 ## 9. Open Questions
 - Should we support customizable Keychain access group for app extensions/shared keychain? (Default: optional `String?` parameter).

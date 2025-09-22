@@ -94,18 +94,25 @@ struct NUT15Tests {
             "https://mint2.example.com": 20
         ]
         
+        var thrownError: Error?
         do {
             _ = try MultiPathPaymentCoordinator.splitAmount(
                 totalAmount: 100,
                 availableBalances: balances
             )
-            #expect(Bool(false), "Should have thrown insufficient balance error")
-        } catch CashuError.balanceInsufficient {
-            // Expected
-            #expect(true)
         } catch {
-            #expect(Bool(false), "Wrong error type")
+            thrownError = error
         }
+
+        let isBalanceError: Bool
+        if let cashuError = thrownError as? CashuError,
+           case .balanceInsufficient = cashuError {
+            isBalanceError = true
+        } else {
+            isBalanceError = false
+        }
+
+        #expect(isBalanceError, "Expected balanceInsufficient error, got: \(String(describing: thrownError))")
     }
     
     @Test("Millisats conversion")

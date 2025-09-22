@@ -266,7 +266,7 @@ let restoredBalance = try await wallet.restoreFromSeed(batchSize: 100) { progres
 - The file-backed secure store encrypts at rest using AES.GCM, enforces `0o600` permissions, zeroizes files best-effort on deletion, and rejects malformed ciphertext.
 
 ### Secure storage status
-- `KeychainSecureStore` now backs Apple platforms by default, keeping mnemonics and tokens inside the system Keychain. The implementation is a fresh prototype; expect additional polish around access groups, biometrics, and audit logging.
+- `KeychainSecureStore` now backs Apple platforms by default, keeping mnemonics and tokens inside the system Keychain. Developers can opt into `AccessControlPolicy` settings (user presence, biometrics, passcode) once the host app carries the appropriate Keychain/biometric entitlements.
 - `FileSecureStore` remains the recommended option for Linux/server environments; pair it with host hardening and backup encryption.
 - `InMemorySecureStore` stays available for tests and ephemeral demos but should not be used for production secrets.
 

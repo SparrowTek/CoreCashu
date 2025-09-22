@@ -185,12 +185,13 @@ struct NUT24Tests {
             token: token,
             paymentRequest: paymentRequest
         )
-        
-        if case .success = result {
-            #expect(true)
-        } else {
-            #expect(Bool(false), "Validation should succeed")
-        }
+
+        let succeeded = {
+            if case .success = result { return true }
+            return false
+        }()
+
+        #expect(succeeded, "Validation should succeed; result was: \(String(describing: result))")
     }
     
     @Test("Validate token - mint not accepted")

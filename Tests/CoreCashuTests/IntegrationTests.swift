@@ -37,8 +37,7 @@ struct IntegrationTests {
             #expect(await wallet.state == .ready)
             #expect(await wallet.isReady == true)
         } catch {
-            // Expected to fail with test mint URL
-            #expect(true)
+            #expect(error is CashuError, "Unexpected initialization error: \(error)")
         }
     }
     

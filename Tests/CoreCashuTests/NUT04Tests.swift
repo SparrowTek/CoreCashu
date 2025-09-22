@@ -358,8 +358,6 @@ struct NUT04Tests {
         Task {
             let _ = operationType
         }
-        
-        #expect(true) // If we reach here, all types are properly Sendable
     }
     
     // MARK: - Method-specific Tests

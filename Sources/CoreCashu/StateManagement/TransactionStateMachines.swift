@@ -270,7 +270,7 @@ public actor TransactionCoordinator {
         let transactionId = UUID()
         let stateMachine = MintTransactionStateMachine()
         
-        let transaction = try await walletStateMachine.startTransaction(type: .mint, id: transactionId)
+        _ = try await walletStateMachine.startTransaction(type: .mint, id: transactionId)
         activeTransactions[transactionId] = stateMachine
         
         _ = try await stateMachine.processEvent(.requestQuote(amount: amount, unit: unit))
@@ -284,7 +284,7 @@ public actor TransactionCoordinator {
         let transactionId = UUID()
         let stateMachine = MeltTransactionStateMachine()
         
-        let transaction = try await walletStateMachine.startTransaction(type: .melt, id: transactionId)
+        _ = try await walletStateMachine.startTransaction(type: .melt, id: transactionId)
         activeTransactions[transactionId] = stateMachine
         
         _ = try await stateMachine.processEvent(.requestQuote(request: request, unit: unit))
@@ -298,7 +298,7 @@ public actor TransactionCoordinator {
         let transactionId = UUID()
         let stateMachine = SwapTransactionStateMachine()
         
-        let transaction = try await walletStateMachine.startTransaction(type: .swap, id: transactionId)
+        _ = try await walletStateMachine.startTransaction(type: .swap, id: transactionId)
         activeTransactions[transactionId] = stateMachine
         
         _ = try await stateMachine.processEvent(.prepareSwap(proofs: proofs))

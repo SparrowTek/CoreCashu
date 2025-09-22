@@ -93,7 +93,7 @@ public actor WalletStateMachine {
     private let maxHistorySize = 100
     
     /// Callbacks for state changes
-    private var stateChangeCallbacks: [(WalletMachineState, WalletMachineState) -> Void] = []
+    private var stateChangeCallbacks: [@Sendable (WalletMachineState, WalletMachineState) async -> Void] = []
     
     /// Active transactions
     private var activeTransactions: [UUID: Transaction] = [:]
@@ -119,7 +119,7 @@ public actor WalletStateMachine {
         
         // Notify callbacks
         for callback in stateChangeCallbacks {
-            callback(oldState, newState)
+            await callback(oldState, newState)
         }
         
         // Handle any side effects
@@ -127,7 +127,7 @@ public actor WalletStateMachine {
     }
     
     /// Add a callback for state changes
-    public func onStateChange(_ callback: @escaping (WalletMachineState, WalletMachineState) -> Void) {
+    public func onStateChange(_ callback: @escaping @Sendable (WalletMachineState, WalletMachineState) async -> Void) {
         stateChangeCallbacks.append(callback)
     }
     

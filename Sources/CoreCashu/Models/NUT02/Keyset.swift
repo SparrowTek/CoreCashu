@@ -6,7 +6,7 @@
 //
 
 /// Response structure for GET /v1/keys and GET /v1/keys/{keyset_id}
-public struct GetKeysResponse: CashuCodabale {
+public struct GetKeysResponse: CashuCodabale, Sendable {
     public let keysets: [Keyset]
     
     public init(keysets: [Keyset]) {
@@ -16,7 +16,7 @@ public struct GetKeysResponse: CashuCodabale {
 
 
 /// Keyset with public keys
-public struct Keyset: CashuCodabale {
+public struct Keyset: CashuCodabale, Sendable {
     public let id: String
     public let unit: String
     public let keys: [String: String] // amount -> public key

@@ -9,6 +9,21 @@ import Testing
 @testable import CoreCashu
 import Foundation
 
+private actor StateChangeRecorder {
+    private var latestTransition: (from: WalletMachineState, to: WalletMachineState)?
+    
+    func record(from: WalletMachineState, to: WalletMachineState) {
+        latestTransition = (from, to)
+    }
+    
+    func snapshot() -> (invoked: Bool, from: WalletMachineState?, to: WalletMachineState?) {
+        guard let transition = latestTransition else {
+            return (false, nil, nil)
+        }
+        return (true, transition.from, transition.to)
+    }
+}
+
 @Suite("State Management Tests")
 struct StateManagementTests {
     
@@ -73,21 +88,18 @@ struct StateManagementTests {
     @Test("State change callbacks")
     func testStateChangeCallbacks() async throws {
         let stateMachine = WalletStateMachine()
-        var callbackInvoked = false
-        var fromState: WalletMachineState?
-        var toState: WalletMachineState?
+        let recorder = StateChangeRecorder()
         
         await stateMachine.onStateChange { from, to in
-            callbackInvoked = true
-            fromState = from
-            toState = to
+            await recorder.record(from: from, to: to)
         }
         
         try await stateMachine.processEvent(.initialize)
         
-        #expect(callbackInvoked == true)
-        #expect(fromState == .uninitialized)
-        #expect(toState == .initializing)
+        let snapshot = await recorder.snapshot()
+        #expect(snapshot.invoked == true)
+        #expect(snapshot.from == .uninitialized)
+        #expect(snapshot.to == .initializing)
     }
     
     @Test("Lock and unlock transitions")

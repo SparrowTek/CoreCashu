@@ -551,7 +551,7 @@ public struct MeltService: Sendable {
             var blindings: [WalletBlindingData] = []
             
             for amount in changeAmounts {
-                let secret = CashuKeyUtils.generateRandomSecret()
+                let secret = try CashuKeyUtils.generateRandomSecret()
                 let walletBlindingData = try WalletBlindingData(secret: secret)
                 let blindedMessage = BlindedMessage(
                     amount: amount,
@@ -783,7 +783,7 @@ public struct MeltService: Sendable {
             var blindings: [WalletBlindingData] = []
             
             for amount in changeAmounts {
-                let secret = CashuKeyUtils.generateRandomSecret()
+                let secret = try CashuKeyUtils.generateRandomSecret()
                 let walletBlindingData = try WalletBlindingData(secret: secret)
                 let blindedMessage = BlindedMessage(
                     amount: amount,

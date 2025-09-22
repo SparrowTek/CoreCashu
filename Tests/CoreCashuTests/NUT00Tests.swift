@@ -15,7 +15,7 @@ struct NUT00Tests {
     
     @Test
     func blindDiffieHellmanKeyExchange() async throws {
-        let secret = CashuKeyUtils.generateRandomSecret()
+        let secret = try CashuKeyUtils.generateRandomSecret()
         let (token, isValid) = try CashuBDHKEProtocol.executeProtocol(secret: secret)
         #expect(isValid)
         

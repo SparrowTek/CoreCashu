@@ -200,7 +200,7 @@ public actor FileSecureStore: SecureStore {
     
     private func encrypt(_ data: Data) throws -> Data {
         // Generate a random nonce
-        let nonce = try CryptoKit.AES.GCM.Nonce()
+        let nonce = CryptoKit.AES.GCM.Nonce()
         
         // Encrypt the data
         let sealedBox = try CryptoKit.AES.GCM.seal(data, using: encryptionKey, nonce: nonce)

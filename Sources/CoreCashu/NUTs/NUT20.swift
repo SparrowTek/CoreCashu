@@ -194,10 +194,7 @@ public struct NUT20SignatureManager: Sendable {
         let schnorrPrivateKey = try P256K.Schnorr.PrivateKey(dataRepresentation: privateKey)
         
         // Generate auxiliary randomness (32 bytes as recommended by BIP340)
-        var auxiliaryRand = [UInt8](repeating: 0, count: 32)
-        for i in 0..<32 {
-            auxiliaryRand[i] = UInt8.random(in: 0...255)
-        }
+        let auxiliaryRand = Array(try SecureRandom.generateBytes(count: 32))
         
         // Create signature using BIP340 Schnorr
         let signature = try schnorrPrivateKey.signature(for: messageHash, auxiliaryRand: auxiliaryRand)

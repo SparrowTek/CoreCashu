@@ -4,7 +4,7 @@ import Testing
 @Test
 func tokenUtils() throws {
     // Create a test token
-    let secret = CashuKeyUtils.generateRandomSecret()
+    let secret = try CashuKeyUtils.generateRandomSecret()
     let (unblindedToken, _) = try CashuBDHKEProtocol.executeProtocol(secret: secret)
     
     let token = CashuTokenUtils.createToken(
@@ -27,7 +27,7 @@ func tokenUtils() throws {
 @Test
 func keyUtils() throws {
     // Test secret generation
-    let secret = CashuKeyUtils.generateRandomSecret()
+    let secret = try CashuKeyUtils.generateRandomSecret()
     let isValidSecret = try CashuKeyUtils.validateSecret(secret)
     #expect(isValidSecret)
     

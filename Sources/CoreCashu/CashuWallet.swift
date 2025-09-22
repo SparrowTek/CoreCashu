@@ -1425,7 +1425,7 @@ public actor CashuWallet {
         var blindingData: [WalletBlindingData] = []
 
         for outputAmount in outputAmounts {
-            let secret = CashuKeyUtils.generateRandomSecret()
+            let secret = try CashuKeyUtils.generateRandomSecret()
             let walletBlindingData = try WalletBlindingData(secret: secret)
             let blindedMessage = BlindedMessage(
                 amount: outputAmount,
@@ -1906,4 +1906,3 @@ extension Collection where Element == Proof {
         return counts
     }
 }
-

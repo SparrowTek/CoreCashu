@@ -13,9 +13,8 @@ import P256K
 /// Utility functions for Cashu key management
 public struct CashuKeyUtils {
     /// Generate a random 32-byte secret as hex string (recommended format)
-    public static func generateRandomSecret() -> String {
-        let randomBytes = (0..<32).map { _ in UInt8.random(in: 0...255) }
-        return Data(randomBytes).hexString
+    public static func generateRandomSecret() throws -> String {
+        return try SecureRandom.generateKey().hexString
     }
     
     /// Generate a new mint keypair

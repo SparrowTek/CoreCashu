@@ -93,14 +93,14 @@ struct WalletConcurrencyTests {
         
         let collector = SecretCollector()
         
-        await withTaskGroup(of: String.self) { group in
+        try await withThrowingTaskGroup(of: String.self) { group in
             for _ in 0..<100 {
                 group.addTask {
-                    CashuKeyUtils.generateRandomSecret()
+                    try CashuKeyUtils.generateRandomSecret()
                 }
             }
             
-            for await secret in group {
+            for try await secret in group {
                 let isNew = await collector.insert(secret)
                 #expect(isNew, "Generated duplicate secret: \(secret)")
             }

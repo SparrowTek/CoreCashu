@@ -12,14 +12,13 @@
 
 ## Recommendations
 
-1. **Unify random byte creation** – Replace `UInt8.random` loops with `SecureRandom.generateBytes` (or async wrappers) so failures propagate and implementations stay centralized.
+1. **Unify random byte creation** – ✅ 2025-09-22: all production call sites now route through `SecureRandom.generateBytes`; `SecureMemory` falls back to a fixed pattern only if randomness fails.
 2. **Expose deterministic testing hook** – Allow `SecureRandom` to accept an injectable RNG for tests; this would also support reproducible fuzzing.
 3. **Document zeroization guarantees** – `SecureMemory.wipe` performs multiple overwrites (including random data) but should mention best-effort semantics in its doc comment and consider `Data.resetBytes` once available.
-4. **Add property tests around key generation** – Extend `Tests/CoreCashuTests` to ensure generated secrets are non-zero, 32 bytes, and unique across calls.
+4. **Add property tests around key generation** – ✅ 2025-09-22: `KeyGenerationPropertyTests` covers hex format, byte length, non-zero enforcement, and collision sampling.
 
 ## Next Actions
 
-- Track the migration of `UInt8.random` call sites via `Docs/production_gaps.md` or dedicated tickets.
+- Track the migration of `UInt8.random` call sites via `Docs/production_gaps.md` or dedicated tickets. (Completed for production sources; update if new usages appear.)
 - If we need platform parity on Linux, audit `SystemRandomNumberGenerator` behavior under WASM once wasm builds are enabled.
 - Revisit `SecureMemory` once Swift exposes better low-level volatile writes; current approach is acceptable but not formally verified.
-

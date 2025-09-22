@@ -389,7 +389,7 @@ public struct MintService: Sendable {
         var blindingData: [WalletBlindingData] = []
         
         for amount in outputAmounts {
-            let secret = CashuKeyUtils.generateRandomSecret()
+            let secret = try CashuKeyUtils.generateRandomSecret()
             let walletBlindingData = try WalletBlindingData(secret: secret)
             let blindedMessage = BlindedMessage(
                 amount: amount,

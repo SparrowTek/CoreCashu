@@ -178,7 +178,12 @@ public struct CashuUR: Sendable {
         
         let fragments = data.chunked(into: maxFragmentSize)
         let totalFragments = fragments.count
-        let id = messageID ?? Data.random(count: 4)
+        let id: Data
+        if let messageID {
+            id = messageID
+        } else {
+            id = try SecureRandom.generateBytes(count: 4)
+        }
         
         return fragments.enumerated().map { index, fragment in
             // Simplified UR format: ur:cashu-token/<index>-<total>/<id>/<data>

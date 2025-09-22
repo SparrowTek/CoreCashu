@@ -173,7 +173,7 @@ public struct BlankOutputGenerator {
         
         for _ in 0..<count {
             // Generate a random secret for the blank output
-            let secret = CashuKeyUtils.generateRandomSecret()
+            let secret = try CashuKeyUtils.generateRandomSecret()
             
             // Create blinding data
             let blindingData = try WalletBlindingData(secret: secret)

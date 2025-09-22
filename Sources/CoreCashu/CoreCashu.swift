@@ -45,8 +45,8 @@ public struct CoreCashu {
 public struct CashuExamples {
     
     /// Example: Generate a random secret
-    public static func generateSecret() -> String {
-        return CashuKeyUtils.generateRandomSecret()
+    public static func generateSecret() throws -> String {
+        try CashuKeyUtils.generateRandomSecret()
     }
     
     /// Example: Create a mint keypair
@@ -56,7 +56,12 @@ public struct CashuExamples {
     
     /// Example: Execute the complete BDHKE protocol
     public static func runBDHKEProtocol(secret: String? = nil) throws -> (token: UnblindedToken, isValid: Bool) {
-        let testSecret = secret ?? CashuKeyUtils.generateRandomSecret()
+        let testSecret: String
+        if let secret {
+            testSecret = secret
+        } else {
+            testSecret = try CashuKeyUtils.generateRandomSecret()
+        }
         return try CashuBDHKEProtocol.executeProtocol(secret: testSecret)
     }
     
@@ -108,4 +113,3 @@ public struct CashuExamples {
     }
 }
 */
-

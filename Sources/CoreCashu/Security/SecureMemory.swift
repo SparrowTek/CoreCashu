@@ -16,19 +16,9 @@ public enum SecureMemory {
         data.withUnsafeMutableBytes { bytes in
             // Use volatile pointer to prevent compiler optimization
             let volatileBytes = bytes.bindMemory(to: UInt8.self)
-            for i in 0..<bytes.count {
-                volatileBytes[i] = 0
-            }
-            
-            // Additional pass with random data for extra security
-            for i in 0..<bytes.count {
-                volatileBytes[i] = UInt8.random(in: 0...255)
-            }
-            
-            // Final pass with zeros
-            for i in 0..<bytes.count {
-                volatileBytes[i] = 0
-            }
+            overwrite(volatileBytes, with: 0)
+            overwriteWithSecureRandom(volatileBytes)
+            overwrite(volatileBytes, with: 0)
         }
         
         // Clear the data
@@ -51,19 +41,10 @@ public enum SecureMemory {
     /// Securely wipe an array of bytes
     /// - Parameter bytes: The byte array to wipe
     public static func wipe(_ bytes: inout [UInt8]) {
-        // Overwrite with zeros
-        for i in 0..<bytes.count {
-            bytes[i] = 0
-        }
-        
-        // Overwrite with random data
-        for i in 0..<bytes.count {
-            bytes[i] = UInt8.random(in: 0...255)
-        }
-        
-        // Final overwrite with zeros
-        for i in 0..<bytes.count {
-            bytes[i] = 0
+        bytes.withUnsafeMutableBufferPointer { buffer in
+            overwrite(buffer, with: 0)
+            overwriteWithSecureRandom(buffer)
+            overwrite(buffer, with: 0)
         }
         
         // Clear the array
@@ -94,6 +75,28 @@ public enum SecureMemory {
             wipe(&mutableString)
         }
         return try block(mutableString)
+    }
+}
+
+// MARK: - Helpers
+
+private extension SecureMemory {
+    static func overwrite(_ buffer: UnsafeMutableBufferPointer<UInt8>, with value: UInt8) {
+        for index in buffer.indices {
+            buffer[index] = value
+        }
+    }
+    
+    static func overwriteWithSecureRandom(_ buffer: UnsafeMutableBufferPointer<UInt8>) {
+        guard buffer.count > 0 else { return }
+        if let randomBytes = try? SecureRandom.generateBytes(count: buffer.count) {
+            for (index, byte) in randomBytes.enumerated() {
+                buffer[index] = byte
+            }
+        } else {
+            // Fallback pattern ensures data is mutated even if randomness fails
+            overwrite(buffer, with: 0xAA)
+        }
     }
 }
 

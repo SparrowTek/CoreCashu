@@ -10,8 +10,8 @@ struct CryptographicTests {
     @Test
     func secretGeneration() async throws {
         // Test secret generation
-        let secret1 = CashuKeyUtils.generateRandomSecret()
-        let secret2 = CashuKeyUtils.generateRandomSecret()
+        let secret1 = try CashuKeyUtils.generateRandomSecret()
+        let secret2 = try CashuKeyUtils.generateRandomSecret()
         
         // Secrets should be different
         #expect(secret1 != secret2)
@@ -26,7 +26,7 @@ struct CryptographicTests {
         // Test multiple generations for uniqueness
         var secrets: Set<String> = []
         for _ in 0..<100 {
-            let secret = CashuKeyUtils.generateRandomSecret()
+            let secret = try CashuKeyUtils.generateRandomSecret()
             secrets.insert(secret)
         }
         
@@ -85,7 +85,7 @@ struct CryptographicTests {
     @Test
     func BDHKEProtocol() async throws {
         // Test basic BDHKE protocol execution
-        let secret = CashuKeyUtils.generateRandomSecret()
+        let secret = try CashuKeyUtils.generateRandomSecret()
         let (unblindedToken, isValid) = try CashuBDHKEProtocol.executeProtocol(secret: secret)
         
         #expect(unblindedToken.secret == secret)
@@ -96,9 +96,9 @@ struct CryptographicTests {
     @Test
     func BDHKEProtocolWithMultipleSecrets() async throws {
         let secrets = [
-            CashuKeyUtils.generateRandomSecret(),
-            CashuKeyUtils.generateRandomSecret(),
-            CashuKeyUtils.generateRandomSecret()
+            try CashuKeyUtils.generateRandomSecret(),
+            try CashuKeyUtils.generateRandomSecret(),
+            try CashuKeyUtils.generateRandomSecret()
         ]
         
         var unblindedTokens: [UnblindedToken] = []
@@ -263,7 +263,7 @@ struct CryptographicTests {
                 var messages: [BlindedMessage] = []
                 var blindings: [WalletBlindingData] = []
                 for amount in amounts {
-                    let secret = CashuKeyUtils.generateRandomSecret()
+                    let secret = try CashuKeyUtils.generateRandomSecret()
                     let blinding = try WalletBlindingData(secret: secret)
                     let message = BlindedMessage(amount: amount, id: first.id, B_: blinding.blindedMessage.dataRepresentation.hexString)
                     messages.append(message)
@@ -286,7 +286,7 @@ struct CryptographicTests {
         let numberOfSecrets = 1000
         
         for _ in 0..<numberOfSecrets {
-            let secret = CashuKeyUtils.generateRandomSecret()
+            let secret = try CashuKeyUtils.generateRandomSecret()
             secrets.insert(secret)
         }
         
@@ -324,7 +324,7 @@ struct CryptographicTests {
         
         // Generate 1000 secrets
         for _ in 0..<1000 {
-            _ = CashuKeyUtils.generateRandomSecret()
+            _ = try CashuKeyUtils.generateRandomSecret()
         }
         
         let endTime = CFAbsoluteTimeGetCurrent()

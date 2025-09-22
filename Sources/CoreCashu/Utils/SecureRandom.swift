@@ -13,12 +13,32 @@ import Security
 
 /// Cross-platform secure random bytes generation
 public enum SecureRandom {
+    private static let generatorBox = GeneratorBox()
+
+    /// Install a custom random byte generator.
+    /// Primarily intended for deterministic testing / fuzzing hooks.
+    public static func installGenerator(_ generator: @escaping @Sendable (_ count: Int) throws -> Data) {
+        generatorBox.store(generator)
+    }
+
+    /// Remove any installed custom generator and return to platform defaults.
+    public static func resetGenerator() {
+        generatorBox.store(nil)
+    }
+
+    private static func activeGenerator() -> (@Sendable (_ count: Int) throws -> Data)? {
+        generatorBox.load()
+    }
     
     /// Generate cryptographically secure random bytes
     /// - Parameter count: Number of bytes to generate
     /// - Returns: Random bytes as Data
     /// - Throws: Error if generation fails
     public static func generateBytes(count: Int) throws -> Data {
+        if let generator = activeGenerator() {
+            return try generator(count)
+        }
+        
         #if canImport(Security)
         // Use Security framework on Apple platforms
         
@@ -60,5 +80,22 @@ public enum SecureRandom {
     /// - Throws: Error if generation fails
     public static func generateNonce() throws -> Data {
         try generateBytes(count: 16)
+    }
+}
+
+private final class GeneratorBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var generator: (@Sendable (_ count: Int) throws -> Data)?
+    
+    func load() -> (@Sendable (_ count: Int) throws -> Data)? {
+        lock.lock()
+        defer { lock.unlock() }
+        return generator
+    }
+    
+    func store(_ newValue: (@Sendable (_ count: Int) throws -> Data)?) {
+        lock.lock()
+        generator = newValue
+        lock.unlock()
     }
 }

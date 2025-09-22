@@ -13,8 +13,8 @@
 ## Recommendations
 
 1. **Unify random byte creation** – ✅ 2025-09-22: all production call sites now route through `SecureRandom.generateBytes`; `SecureMemory` falls back to a fixed pattern only if randomness fails.
-2. **Expose deterministic testing hook** – Allow `SecureRandom` to accept an injectable RNG for tests; this would also support reproducible fuzzing.
-3. **Document zeroization guarantees** – `SecureMemory.wipe` performs multiple overwrites (including random data) but should mention best-effort semantics in its doc comment and consider `Data.resetBytes` once available.
+2. **Expose deterministic testing hook** – ✅ 2025-09-22: `SecureRandom.installGenerator` enables injectable RNGs for fuzzing and tests.
+3. **Document zeroization guarantees** – ✅ 2025-09-22: `SecureMemory` docs now call out best-effort semantics; revisit `Data.resetBytes` once available for stronger guarantees.
 4. **Add property tests around key generation** – ✅ 2025-09-22: `KeyGenerationPropertyTests` covers hex format, byte length, non-zero enforcement, and collision sampling.
 
 ## Next Actions

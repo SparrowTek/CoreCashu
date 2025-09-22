@@ -7,10 +7,12 @@
 
 import Foundation
 
-/// Utilities for secure memory management
+/// Utilities for best-effort secure memory management. These routines overwrite buffers with
+/// multiple patterns (zero, random, zero) to reduce the likelihood of residual secrets but cannot
+/// guarantee hardware-level zeroization in the presence of compiler or hardware reordering.
 public enum SecureMemory {
     
-    /// Securely wipe a Data object's contents
+    /// Securely wipe a Data object's contents (best effort)
     /// - Parameter data: The data to wipe
     public static func wipe(_ data: inout Data) {
         data.withUnsafeMutableBytes { bytes in
@@ -25,7 +27,7 @@ public enum SecureMemory {
         data.removeAll(keepingCapacity: false)
     }
     
-    /// Securely wipe a String's contents
+    /// Securely wipe a String's contents (best effort)
     /// - Parameter string: The string to wipe
     public static func wipe(_ string: inout String) {
         // Convert to mutable data
@@ -38,7 +40,7 @@ public enum SecureMemory {
         string = ""
     }
     
-    /// Securely wipe an array of bytes
+    /// Securely wipe an array of bytes (best effort)
     /// - Parameter bytes: The byte array to wipe
     public static func wipe(_ bytes: inout [UInt8]) {
         bytes.withUnsafeMutableBufferPointer { buffer in

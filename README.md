@@ -257,20 +257,28 @@ let restoredBalance = try await wallet.restoreFromSeed(batchSize: 100) { progres
 
 ## Security Considerations
 
-⚠️ **This library is NOT security audited and should NOT be used in production.**
+⚠️ **CoreCashu remains unaudited and must not be connected to real funds.** The points below track our active security posture and the gates that must close before we relax the production warning.
 
-Current security implementation:
-- Uses system-provided secure random generation
-- Implements constant-time cryptographic operations via P256K
-- Validates all external inputs
-- Uses actor model for thread safety
+### Implemented safeguards
+- All production call sites now route through `SecureRandom.generateBytes`, with failure paths surfaced via `SecureRandomError` and deterministic overrides available for tests (see `Docs/security_audit.md`).
+- Cryptographic primitives lean on `swift-secp256k1`, CryptoKit, and CryptoSwift with constant-time operations where available; BDHKE, P2PK, and HTLC flows are regression-tested under `Tests/CoreCashuTests/CryptographicTests.swift`.
+- Wallet state is isolated behind actors and `Sendable`-audited types to prevent concurrency data races.
+- The file-backed secure store encrypts at rest using AES.GCM, enforces `0o600` permissions, zeroizes files best-effort on deletion, and rejects malformed ciphertext.
 
-Missing security features:
-- Secure key storage (Keychain integration in progress)
-- Rate limiting for mint requests
-- Circuit breakers for network failures
-- Comprehensive input validation
-- Security audit
+### Secure storage status
+- `FileSecureStore` is the only shipped implementation today. It is suitable for controlled environments (server-side, Linux) but still requires external hardening for backups and password policy.
+- An Apple Keychain-based secure store is planned in Phase 2 of the production readiness roadmap; until then Apple platforms default to the in-memory store and should be considered unsafe for secrets beyond prototyping.
+- `InMemorySecureStore` will remain for testing only and will be formally deprecated once platform-specific stores land.
+
+### Threat model snapshot
+- **Device compromise:** Secrets reside on-disk when using `FileSecureStore`; loss of the host or weak filesystem permissions exposes mnemonics and access tokens. Mitigation relies on host hardening and pending Keychain integration.
+- **Network/mint surface:** HTTPS/TLS pinning, retry limits, and mint DOS protections are not yet implemented. Clients must assume the mint can observe request metadata until rate limiting and circuit breakers ship (see `Docs/production_gaps.md`).
+- **Implementation defects:** BIP39/BIP32 derivation is covered by deterministic tests, but additional BIP32 compliance vectors are still TODO in `Tests/CoreCashuTests/NUT13Tests.swift`. Serialization fuzzing and adversarial input suites are scheduled for Phase 6.
+
+### Audit expectations
+- Third-party cryptography and security review is a release blocker. Preparatory material (threat model, incident response) will live under `Docs/` once drafted in later phases.
+- Before commissioning the audit, we require completion of secure storage implementations, networking rate limiting/circuit breakers, and telemetry hooks to monitor key flows.
+- Until those gates close, keep CoreCashu deployments limited to mocks, tests, or controlled demonstrations.
 
 ## Platform Support
 

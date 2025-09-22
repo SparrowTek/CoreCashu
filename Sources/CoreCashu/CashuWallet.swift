@@ -173,8 +173,15 @@ public actor CashuWallet {
         self.mintInfoService = await MintInfoService()
         self.keysetCounterManager = KeysetCounterManager()
         
-        // Use provided secure store or default to in-memory
+        #if canImport(Security) && !os(Linux)
+        if let secureStore {
+            self.secureStore = secureStore
+        } else {
+            self.secureStore = KeychainSecureStore()
+        }
+        #else
         self.secureStore = secureStore
+        #endif
         
         // Use provided networking or default to URLSession.shared
         self.networking = networking ?? URLSession.shared
@@ -225,8 +232,15 @@ public actor CashuWallet {
         self.mintInfoService = await MintInfoService()
         self.keysetCounterManager = KeysetCounterManager()
         
-        // Use provided secure store
+        #if canImport(Security) && !os(Linux)
+        if let secureStore {
+            self.secureStore = secureStore
+        } else {
+            self.secureStore = KeychainSecureStore()
+        }
+        #else
         self.secureStore = secureStore
+        #endif
         
         // Use provided networking or default to URLSession.shared
         self.networking = networking ?? URLSession.shared

@@ -1,6 +1,6 @@
 # KeychainSecureStore Design Scope (Phase 2 Draft)
 
-> Status: Scoping draft prepared on 2025-09-22. Use as the source of truth while implementing the Apple secure store.
+> Status: Prototype scaffolding added on 2025-09-22; update this document as implementation matures.
 
 ## 1. Goals
 - Provide a production-ready secure store for Apple platforms that implements `SecureStore`.
@@ -23,11 +23,11 @@
 - Internal helpers wrap Keychain queries via `SecItemAdd`, `SecItemCopyMatching`, `SecItemUpdate`, `SecItemDelete`.
 - Use service identifiers namespaced under `"cashu.core"` plus item-specific suffixes (e.g., `"cashu.core.mnemonic"`).
 - Encode complex payloads (token dictionaries/lists) as JSON before storing; enforce `.utf8` serialization with envelope struct to allow future versioning.
-- Provide initializer accepting optional `accessGroup` and `SecAccessControl` configuration. Default to `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`.
+- Provide initializer accepting optional `accessGroup`; plumb configurable `SecAccessControl` in a follow-up revision. Default to `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` for now.
 
 ## 5. Security & Access Control
 - Store mnemonics/seeds as `kSecClassKey` or `kSecClassGenericPassword` items with `kSecAttrSynchronizable` disabled.
-- Configure `SecAccessControl` with `.biometryAny` or `.userPresence` opt-in; default to no UI requirement for background usage.
+- Configure `SecAccessControl` with `.biometryAny` or `.userPresence` opt-in (TODO); default to no UI requirement for background usage until that lands.
 - Ensure items are set with `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` to prevent iCloud sync and limit to device.
 - Consider `SecItemDelete` zeroization limitations; rely on Keychain semantics plus memory scrubbing before submission.
 

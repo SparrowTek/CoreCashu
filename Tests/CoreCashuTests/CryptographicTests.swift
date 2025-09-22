@@ -1,6 +1,7 @@
 import Testing
 @testable import CoreCashu
 import Foundation
+import P256K
 
 @Suite("Cryptographic tests")
 struct CryptographicTests {
@@ -135,6 +136,126 @@ struct CryptographicTests {
         // but the secret should be the same
         #expect(unblindedToken1.secret == secret)
         #expect(unblindedToken2.secret == secret)
+    }
+
+    // MARK: - Property Invariants
+
+    @Test
+    func BDHKEPropertyVectors() throws {
+        let mintKeyHex = String(repeating: "01", count: 32)
+        guard let mintKeyData = Data(hexString: mintKeyHex) else {
+            #expect(Bool(false), "Failed to build deterministic mint key data")
+            return
+        }
+        let mintPrivateKey = try P256K.KeyAgreement.PrivateKey(dataRepresentation: mintKeyData)
+        let mint = try Mint(privateKey: mintPrivateKey)
+
+        let secrets = [
+            "vector-alpha",
+            "vector-bravo",
+            "vector-charlie",
+            "vector-delta",
+            "vector-echo"
+        ]
+
+        for secret in secrets {
+            let (blindingData, blindedMessage) = try Wallet.createBlindedMessage(secret: secret)
+            let blindedSignature = try mint.signBlindedMessage(blindedMessage)
+            let token = try Wallet.unblindSignature(
+                blindedSignature: blindedSignature,
+                blindingData: blindingData,
+                mintPublicKey: mint.keypair.publicKey
+            )
+
+            #expect(token.secret == secret)
+            #expect(Wallet.validateTokenStructure(token))
+
+            let expectedPoint = try multiplyPoint(try hashToCurve(secret), by: mintPrivateKey)
+            #expect(token.signature == expectedPoint.dataRepresentation, "Unblinded signature should match deterministic mint computation")
+            #expect(try mint.verifyToken(secret: token.secret, signature: token.signature))
+        }
+    }
+
+    @Test
+    func P2PKRoundTripProperty() throws {
+        let basePubKey = "0249098aa8b9d2fbec49ff8598feb17b592b986e62319a4fa488a3dc36387157a7"
+        let extraKeys = [
+            "033281c37677ea273eb7183b783067f5244933ef78d8c3f15b1a77cb246099c26e",
+            "02698c4e2b5f9534cd0687d87513c759790cf829aa5739184a3e3735471fbda904"
+        ]
+
+        let locktime = 1_695_000_000
+
+        let cases: [P2PKSpendingCondition] = [
+            .simple(publicKey: basePubKey),
+            .multisig(publicKeys: [basePubKey] + extraKeys, requiredSigs: 2, signatureFlag: .sigAll),
+            .timelocked(publicKey: basePubKey, locktime: locktime, refundPubkeys: extraKeys)
+        ]
+
+        for condition in cases {
+            let secret = condition.toWellKnownSecret()
+            let restored = try P2PKSpendingCondition.fromWellKnownSecret(secret)
+
+            #expect(restored.publicKey == condition.publicKey)
+            #expect(restored.additionalPubkeys == condition.additionalPubkeys)
+            #expect(restored.requiredSigs == condition.requiredSigs)
+            #expect(restored.signatureFlag == condition.signatureFlag)
+            #expect(restored.locktime == condition.locktime)
+            #expect(restored.refundPubkeys == condition.refundPubkeys)
+
+            let possibleSigners = Set(restored.getAllPossibleSigners())
+            let expectedSigners = Set([restored.publicKey] + restored.additionalPubkeys)
+            #expect(possibleSigners.isSuperset(of: expectedSigners))
+        }
+    }
+
+    @Test
+    func HTLCPreimageProperty() throws {
+        let generatorPoint = "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+        let preimages: [Data] = (0..<4).map { index in
+            Data((0..<32).map { byte -> UInt8 in
+                UInt8((index * 17 + Int(byte)) & 0xFF)
+            })
+        }
+
+        for (index, preimage) in preimages.enumerated() {
+            let secretJSON = try HTLCCreator.createHTLCSecret(
+                preimage: preimage,
+                pubkeys: [],
+                locktime: nil,
+                refundKey: nil
+            )
+            let secret = try WellKnownSecret.fromString(secretJSON)
+
+            #expect(secret.isHTLC)
+            #expect(secret.hashLock != nil)
+
+            let witness = HTLCWitness.createForPreimage(preimage)
+            let witnessData = try JSONEncoder().encode(witness)
+            guard let witnessString = String(data: witnessData, encoding: .utf8) else {
+                #expect(Bool(false), "Failed to encode HTLC witness")
+                continue
+            }
+
+            let proof = Proof(
+                amount: 1,
+                id: "htlc-property-\(index)",
+                secret: secretJSON,
+                C: generatorPoint,
+                witness: witnessString
+            )
+
+            #expect(try HTLCVerifier.verifyPreimage(preimage: witness.preimage, hashLock: secret.hashLock ?? ""))
+            #expect(try HTLCVerifier.verifyHTLC(proof: proof, witness: witness))
+
+            var mutated = Data(preimage)
+            mutated[0] ^= 0xFF
+            let badWitness = HTLCWitness.createForPreimage(mutated)
+            #expect(try HTLCVerifier.verifyHTLC(
+                proof: proof,
+                witness: badWitness
+            ) == false)
+        }
     }
     
     // MARK: - Mint Key Management Tests

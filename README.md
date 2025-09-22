@@ -276,7 +276,7 @@ let restoredBalance = try await wallet.restoreFromSeed(batchSize: 100) { progres
 - **Implementation defects:** BIP39/BIP32 derivation is covered by deterministic tests, but additional BIP32 compliance vectors are still TODO in `Tests/CoreCashuTests/NUT13Tests.swift`. Serialization fuzzing and adversarial input suites are scheduled for Phase 6.
 
 ### Audit expectations
-- Third-party cryptography and security review is a release blocker. Preparatory material (threat model, incident response) will live under `Docs/` once drafted in later phases.
+- Third-party cryptography and security review is a release blocker. Threat model outline now lives in `Docs/threat_model.md`; incident response playbook will join `Docs/` as part of later phases.
 - Before commissioning the audit, we require completion of secure storage implementations, networking rate limiting/circuit breakers, and telemetry hooks to monitor key flows.
 - Until those gates close, keep CoreCashu deployments limited to mocks, tests, or controlled demonstrations.
 

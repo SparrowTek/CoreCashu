@@ -267,7 +267,7 @@ let restoredBalance = try await wallet.restoreFromSeed(batchSize: 100) { progres
 
 ### Secure storage status
 - `KeychainSecureStore` now backs Apple platforms by default, keeping mnemonics and tokens inside the system Keychain. Manual validation and entitlement requirements are tracked in `Docs/keychain_secure_store_plan.md`. When building on Apple platforms you can require user presence, biometrics, or passcode enforcement via the wallet configuration's Keychain access-control settings (see ``WalletConfiguration``), e.g. `WalletConfiguration(mintURL: "…", keychainAccessControl: .userPresence)`.
-- `FileSecureStore` is the current hardened option for Linux/server environments; pair it with host hardening, filesystem permissions, and encrypted backups while the dedicated Linux secure store is under construction.
+- `FileSecureStore` now ships with envelope-based AES-GCM encryption, master-key rotation, and optional password-derived keys for Linux/server environments. Pair it with host hardening, filesystem permissions, and encrypted backups for defense in depth.
 - `InMemorySecureStore` stays available for tests and ephemeral demos but must not be used for production secrets.
 
 ### Threat model snapshot

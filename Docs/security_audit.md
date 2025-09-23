@@ -7,7 +7,7 @@
 
 - Cryptographically secure randomness is available via `SecureRandom.generateBytes`, which uses `SecRandomCopyBytes` on Apple platforms and `SystemRandomNumberGenerator` elsewhere. Key derivation paths in `FileSecureStore` and DLEQ utilities already rely on this API.
 - Several callers still use `UInt8.random(in:)` or `Data.random(count:)` directly when creating secrets (e.g. `CashuKeyUtils.generateRandomSecret`, BIP340 auxiliary randomness in `NUT20SignatureManager`, SecureMemory overwrite passes). While Swift’s default RNG is cryptographically secure, these sites bypass our error-handling surface and make it harder to swap in deterministic generators for testing.
-- Key storage implementations (`FileSecureStore`) enforce 0o600/0o700 permissions, use CryptoKit AES.GCM nonces, and persist salts/keys generated through secure sources.
+- Key storage implementations (`FileSecureStore`) enforce 0o600/0o700 permissions, leverage CryptoSwift AES-GCM envelopes with per-item nonces, and persist salts/keys generated through secure sources.
 - Protocol definitions do not leak implementation details; all stateful storage is actor-isolated.
 
 ## Recommendations

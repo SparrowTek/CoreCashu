@@ -213,7 +213,13 @@ public actor CashuWallet {
             self.secureStore = KeychainSecureStore(configuration: configuration.keychainConfiguration)
         }
         #else
-        self.secureStore = secureStore
+        if let secureStore {
+            self.secureStore = secureStore
+        } else if let fileStore = try? await FileSecureStore() {
+            self.secureStore = fileStore
+        } else {
+            self.secureStore = nil
+        }
         #endif
         
         // Use provided networking or default to URLSession.shared
@@ -272,7 +278,11 @@ public actor CashuWallet {
             self.secureStore = KeychainSecureStore(configuration: configuration.keychainConfiguration)
         }
         #else
-        self.secureStore = secureStore
+        if let secureStore {
+            self.secureStore = secureStore
+        } else {
+            self.secureStore = try await FileSecureStore()
+        }
         #endif
         
         // Use provided networking or default to URLSession.shared

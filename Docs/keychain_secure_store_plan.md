@@ -53,6 +53,7 @@
 - When `AccessControlPolicy.userPresence` or biometric policies are enabled, confirm the system prompts before reads and that background tasks without UI receive `errSecInteractionNotAllowed`.
 - Run `security find-generic-password -s <service>` to ensure namespace isolation and absence of plaintext secrets.
 - Execute the Swift Testing suite (`KeychainSecureStore` tests) on both simulator and physical hardware to confirm no stale state leaks between runs.
+- Pending 2025-09-23: on-device biometric validation remains outstanding because this environment lacks the required entitlements/hardware. Track completion in the next provisioned session before lifting README caveats.
 
 ## 9. Open Questions
 - Should we support customizable Keychain access group for app extensions/shared keychain? (Default: optional `String?` parameter).

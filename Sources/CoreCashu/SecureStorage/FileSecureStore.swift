@@ -2,335 +2,525 @@
 //  FileSecureStore.swift
 //  CoreCashu
 //
-//  File-based encrypted storage implementation for cross-platform use
+//  Hardened file-based secure storage for Linux and other non-Keychain platforms.
 //
 
 import Foundation
-import CryptoKit
 import CryptoSwift
 
-/// File-based secure storage for Linux and cross-platform use
+/// File-backed secure store that encrypts wallet material at rest using AES-GCM.
+/// Suitable for Linux and other platforms where a system keychain is unavailable.
 public actor FileSecureStore: SecureStore {
-    
-    private let storageDirectory: URL
-    private let encryptionKey: SymmetricKey
-    
-    /// File names for different types of data
-    private enum FileName {
-        static let mnemonic = "mnemonic.enc"
-        static let seed = "seed.enc"
-        static let accessTokens = "access_tokens.enc"
-        static let accessTokenLists = "access_token_lists.enc"
-        static let keyDerivation = "key_derivation.salt"
-    }
-    
-    /// Initialize the file-based secure store
-    /// - Parameters:
-    ///   - directory: Directory to store encrypted files (default: ~/.cashu/secure)
-    ///   - password: Optional password for key derivation. If nil, generates a random key stored with the data
-    public init(directory: URL? = nil, password: String? = nil) async throws {
-        // Set storage directory
-        if let directory = directory {
-            self.storageDirectory = directory
-        } else {
-            let homeDirectory = FileManager.default.homeDirectoryForCurrentUser
-            self.storageDirectory = homeDirectory.appendingPathComponent(".cashu/secure")
+
+    // MARK: - Configuration
+
+    public struct Configuration: Sendable {
+        public struct FileNames: Sendable, Codable {
+            public var mnemonic: String
+            public var seed: String
+            public var accessTokens: String
+            public var accessTokenLists: String
+
+            public init(
+                mnemonic: String = "mnemonic.enc",
+                seed: String = "seed.enc",
+                accessTokens: String = "access_tokens.enc",
+                accessTokenLists: String = "access_token_lists.enc"
+            ) {
+                self.mnemonic = mnemonic
+                self.seed = seed
+                self.accessTokens = accessTokens
+                self.accessTokenLists = accessTokenLists
+            }
+
+            public static let `default` = FileNames()
         }
-        
-        // Create directory if it doesn't exist
-        try FileManager.default.createDirectory(
-            at: storageDirectory,
-            withIntermediateDirectories: true,
-            attributes: [.posixPermissions: 0o700] // rwx------
-        )
-        
-        // Derive or generate encryption key
-        if let password = password {
-            self.encryptionKey = try await FileSecureStore.deriveKey(
-                from: password,
-                storageDirectory: storageDirectory
-            )
-        } else {
-            self.encryptionKey = try await FileSecureStore.generateOrLoadKey(
-                storageDirectory: storageDirectory
-            )
+
+        public var directory: URL?
+        public var password: String?
+        public var fileNames: FileNames
+        public var keyMaterialFileName: String
+        public var pbkdfRounds: Int
+        public var nonceLength: Int
+
+        public init(
+            directory: URL? = nil,
+            password: String? = nil,
+            fileNames: FileNames = .default,
+            keyMaterialFileName: String = "secure_store_master_key.json",
+            pbkdfRounds: Int = 200_000,
+            nonceLength: Int = 12
+        ) {
+            self.directory = directory
+            self.password = password
+            self.fileNames = fileNames
+            self.keyMaterialFileName = keyMaterialFileName
+            self.pbkdfRounds = pbkdfRounds
+            self.nonceLength = nonceLength
         }
     }
-    
-    // MARK: - Mnemonic Operations
-    
-    public func saveMnemonic(_ mnemonic: String) async throws {
-        let url = storageDirectory.appendingPathComponent(FileName.mnemonic)
-        try await saveEncrypted(mnemonic, to: url)
+
+    private struct KeyState {
+        var keyBytes: [UInt8]
+        var metadata: KeyMetadata
     }
-    
-    public func loadMnemonic() async throws -> String? {
-        let url = storageDirectory.appendingPathComponent(FileName.mnemonic)
-        return try await loadEncrypted(from: url)
+
+    private struct KeyMetadata: Codable, Sendable {
+        var version: Int
+        var keyId: UUID
+        var createdAt: Date
+        var salt: Data?
+        var pbkdfRounds: Int?
     }
-    
-    public func deleteMnemonic() async throws {
-        let url = storageDirectory.appendingPathComponent(FileName.mnemonic)
-        try deleteFile(at: url)
+
+    private struct KeyContainer: Codable {
+        var metadata: KeyMetadata
+        var keyData: Data?
     }
-    
-    // MARK: - Seed Operations
-    
-    public func saveSeed(_ seed: String) async throws {
-        let url = storageDirectory.appendingPathComponent(FileName.seed)
-        try await saveEncrypted(seed, to: url)
-    }
-    
-    public func loadSeed() async throws -> String? {
-        let url = storageDirectory.appendingPathComponent(FileName.seed)
-        return try await loadEncrypted(from: url)
-    }
-    
-    public func deleteSeed() async throws {
-        let url = storageDirectory.appendingPathComponent(FileName.seed)
-        try deleteFile(at: url)
-    }
-    
-    // MARK: - Access Token Operations
-    
-    public func saveAccessToken(_ token: String, mintURL: URL) async throws {
-        var tokens = try await loadAllAccessTokens() ?? [:]
-        tokens[mintURL.absoluteString] = token
-        try await saveAllAccessTokens(tokens)
-    }
-    
-    public func loadAccessToken(mintURL: URL) async throws -> String? {
-        let tokens = try await loadAllAccessTokens()
-        return tokens?[mintURL.absoluteString]
-    }
-    
-    public func deleteAccessToken(mintURL: URL) async throws {
-        var tokens = try await loadAllAccessTokens() ?? [:]
-        tokens.removeValue(forKey: mintURL.absoluteString)
-        try await saveAllAccessTokens(tokens)
-    }
-    
-    // MARK: - Access Token List Operations
-    
-    public func saveAccessTokenList(_ tokenList: [String], mintURL: URL) async throws {
-        var tokenLists = try await loadAllAccessTokenLists() ?? [:]
-        tokenLists[mintURL.absoluteString] = tokenList
-        try await saveAllAccessTokenLists(tokenLists)
-    }
-    
-    public func loadAccessTokenList(mintURL: URL) async throws -> [String]? {
-        let tokenLists = try await loadAllAccessTokenLists()
-        return tokenLists?[mintURL.absoluteString]
-    }
-    
-    public func deleteAccessTokenList(mintURL: URL) async throws {
-        var tokenLists = try await loadAllAccessTokenLists() ?? [:]
-        tokenLists.removeValue(forKey: mintURL.absoluteString)
-        try await saveAllAccessTokenLists(tokenLists)
-    }
-    
-    // MARK: - Utility Operations
-    
-    public func clearAll() async throws {
-        let fileManager = FileManager.default
-        let files = try fileManager.contentsOfDirectory(at: storageDirectory, includingPropertiesForKeys: nil)
-        
-        for file in files {
-            // Don't delete the key derivation salt
-            if file.lastPathComponent != "key.enc" && file.lastPathComponent != FileName.keyDerivation {
-                try fileManager.removeItem(at: file)
+
+    private enum StorageKind {
+        case mnemonic
+        case seed
+        case accessTokens
+        case accessTokenLists
+
+        func fileName(using names: Configuration.FileNames) -> String {
+            switch self {
+            case .mnemonic:
+                return names.mnemonic
+            case .seed:
+                return names.seed
+            case .accessTokens:
+                return names.accessTokens
+            case .accessTokenLists:
+                return names.accessTokenLists
             }
         }
     }
-    
-    public func hasStoredData() async throws -> Bool {
-        let hasMnemonic = try await loadMnemonic() != nil
-        let hasSeed = try await loadSeed() != nil
-        let hasTokens = try await loadAllAccessTokens()?.isEmpty == false
-        return hasMnemonic || hasSeed || hasTokens
+
+    private static let envelopeVersion: UInt8 = 1
+
+    private var configuration: Configuration
+    private let storageDirectory: URL
+    private var keyState: KeyState
+
+    // MARK: - Lifecycle
+
+    public init(directory: URL? = nil, password: String? = nil) async throws {
+        let configuration = Configuration(directory: directory, password: password)
+        try await self.init(configuration: configuration)
     }
-    
-    // MARK: - Private Encryption Operations
-    
-    private func saveEncrypted(_ value: String, to url: URL) async throws {
+
+    public init(configuration: Configuration) async throws {
+        self.configuration = configuration
+        self.storageDirectory = Self.resolveDirectory(configuration.directory)
+        try Self.prepareDirectory(storageDirectory)
+        self.keyState = try Self.bootstrapKeyState(
+            configuration: configuration,
+            storageDirectory: storageDirectory,
+            rotating: false
+        )
+    }
+
+    // MARK: - SecureStore
+
+    public func saveMnemonic(_ mnemonic: String) async throws {
+        try saveString(mnemonic, kind: .mnemonic)
+    }
+
+    public func loadMnemonic() async throws -> String? {
+        try loadString(kind: .mnemonic)
+    }
+
+    public func deleteMnemonic() async throws {
+        try delete(kind: .mnemonic)
+    }
+
+    public func saveSeed(_ seed: String) async throws {
+        try saveString(seed, kind: .seed)
+    }
+
+    public func loadSeed() async throws -> String? {
+        try loadString(kind: .seed)
+    }
+
+    public func deleteSeed() async throws {
+        try delete(kind: .seed)
+    }
+
+    public func saveAccessToken(_ token: String, mintURL: URL) async throws {
+        var tokens = try loadAccessTokensDictionary()
+        tokens[mintURL.absoluteString] = token
+        try saveAccessTokensDictionary(tokens)
+    }
+
+    public func loadAccessToken(mintURL: URL) async throws -> String? {
+        let tokens = try loadAccessTokensDictionary()
+        return tokens[mintURL.absoluteString]
+    }
+
+    public func deleteAccessToken(mintURL: URL) async throws {
+        var tokens = try loadAccessTokensDictionary()
+        tokens.removeValue(forKey: mintURL.absoluteString)
+        try saveAccessTokensDictionary(tokens)
+    }
+
+    public func saveAccessTokenList(_ tokens: [String], mintURL: URL) async throws {
+        var tokenLists = try loadAccessTokenListsDictionary()
+        tokenLists[mintURL.absoluteString] = tokens
+        try saveAccessTokenListsDictionary(tokenLists)
+    }
+
+    public func loadAccessTokenList(mintURL: URL) async throws -> [String]? {
+        let tokenLists = try loadAccessTokenListsDictionary()
+        return tokenLists[mintURL.absoluteString]
+    }
+
+    public func deleteAccessTokenList(mintURL: URL) async throws {
+        var tokenLists = try loadAccessTokenListsDictionary()
+        tokenLists.removeValue(forKey: mintURL.absoluteString)
+        try saveAccessTokenListsDictionary(tokenLists)
+    }
+
+    public func clearAll() async throws {
+        try delete(kind: .mnemonic)
+        try delete(kind: .seed)
+        try delete(kind: .accessTokens)
+        try delete(kind: .accessTokenLists)
+    }
+
+    public func hasStoredData() async throws -> Bool {
+        let hasMnemonic = try loadString(kind: .mnemonic) != nil
+        let hasSeed = try loadString(kind: .seed) != nil
+        let hasTokens = try loadAccessTokensDictionary().isEmpty == false
+        let hasTokenLists = try loadAccessTokenListsDictionary().isEmpty == false
+        return hasMnemonic || hasSeed || hasTokens || hasTokenLists
+    }
+
+    // MARK: - Key Rotation
+
+    /// Rotate the master encryption key and re-encrypt persisted data.
+    /// - Parameter newPassword: Optional password to use for the refreshed key. Defaults to the current configuration.
+    public func rotateMasterKey(newPassword: String? = nil) async throws {
+        let mnemonic = try loadString(kind: .mnemonic)
+        let seed = try loadString(kind: .seed)
+        let tokens = try loadAccessTokensDictionary()
+        let tokenLists = try loadAccessTokenListsDictionary()
+
+        if let newPassword {
+            configuration.password = newPassword
+        }
+
+        keyState = try Self.bootstrapKeyState(
+            configuration: configuration,
+            storageDirectory: storageDirectory,
+            rotating: true
+        )
+
+        if let mnemonic {
+            try saveString(mnemonic, kind: .mnemonic)
+        } else {
+            try delete(kind: .mnemonic)
+        }
+
+        if let seed {
+            try saveString(seed, kind: .seed)
+        } else {
+            try delete(kind: .seed)
+        }
+
+        if tokens.isEmpty {
+            try delete(kind: .accessTokens)
+        } else {
+            try saveAccessTokensDictionary(tokens)
+        }
+
+        if tokenLists.isEmpty {
+            try delete(kind: .accessTokenLists)
+        } else {
+            try saveAccessTokenListsDictionary(tokenLists)
+        }
+    }
+
+    // MARK: - Persistence Helpers
+
+    private func saveString(_ value: String, kind: StorageKind) throws {
         guard let data = value.data(using: .utf8) else {
             throw SecureStoreError.invalidData
         }
-        
-        // Encrypt the data
-        let encrypted = try encrypt(data)
-        
-        // Save to file with restricted permissions
-        try encrypted.write(to: url)
-        try FileManager.default.setAttributes(
-            [.posixPermissions: 0o600], // rw-------
-            ofItemAtPath: url.path
-        )
+        try saveData(data, kind: kind)
     }
-    
-    private func loadEncrypted(from url: URL) async throws -> String? {
+
+    private func loadString(kind: StorageKind) throws -> String? {
+        guard let data = try loadData(kind: kind) else {
+            return nil
+        }
+        guard let string = String(data: data, encoding: .utf8) else {
+            throw SecureStoreError.invalidData
+        }
+        return string
+    }
+
+    private func saveData(_ data: Data, kind: StorageKind) throws {
+        let encrypted = try encrypt(data)
+        let url = path(for: kind)
+        try encrypted.write(to: url, options: .atomic)
+        try Self.hardenFile(at: url)
+    }
+
+    private func loadData(kind: StorageKind) throws -> Data? {
+        let url = path(for: kind)
         guard FileManager.default.fileExists(atPath: url.path) else {
             return nil
         }
-        
-        let encryptedData = try Data(contentsOf: url)
-        let decryptedData = try decrypt(encryptedData)
-        
-        guard let string = String(data: decryptedData, encoding: .utf8) else {
-            throw SecureStoreError.invalidData
-        }
-        
-        return string
+        let envelope = try Data(contentsOf: url)
+        return try decrypt(envelope)
     }
-    
-    private func deleteFile(at url: URL) throws {
+
+    private func delete(kind: StorageKind) throws {
+        let url = path(for: kind)
         guard FileManager.default.fileExists(atPath: url.path) else {
             return
         }
-        
-        // Overwrite with random data before deletion (basic zeroization)
-        if let randomData = try? SecureRandom.generateBytes(count: 1024) {
-            try? randomData.write(to: url)
+
+        // Overwrite with random bytes before removal (best-effort sanitisation)
+        if let filler = try? SecureRandom.generateBytes(count: 1024) {
+            try? filler.write(to: url, options: .atomic)
         }
-        
+
         try FileManager.default.removeItem(at: url)
     }
-    
-    // MARK: - Encryption Helpers
-    
-    private func encrypt(_ data: Data) throws -> Data {
-        // Generate a random nonce
-        let nonce = CryptoKit.AES.GCM.Nonce()
-        
-        // Encrypt the data
-        let sealedBox = try CryptoKit.AES.GCM.seal(data, using: encryptionKey, nonce: nonce)
-        
-        // Combine nonce + ciphertext + tag
-        guard let combined = sealedBox.combined else {
-            throw SecureStoreError.storeFailed("Failed to create sealed box")
+
+    private func path(for kind: StorageKind) -> URL {
+        storageDirectory.appendingPathComponent(kind.fileName(using: configuration.fileNames))
+    }
+
+    // MARK: - Token dictionary helpers
+
+    private func loadAccessTokensDictionary() throws -> [String: String] {
+        guard let data = try loadData(kind: .accessTokens) else {
+            return [:]
         }
-        
-        return combined
+        return try JSONDecoder().decode([String: String].self, from: data)
     }
-    
-    private func decrypt(_ data: Data) throws -> Data {
-        // Create sealed box from combined data
-        let sealedBox = try CryptoKit.AES.GCM.SealedBox(combined: data)
-        
-        // Decrypt the data
-        let decrypted = try CryptoKit.AES.GCM.open(sealedBox, using: encryptionKey)
-        
-        return decrypted
+
+    private func saveAccessTokensDictionary(_ tokens: [String: String]) throws {
+        let data = try JSONEncoder().encode(tokens)
+        try saveData(data, kind: .accessTokens)
     }
-    
-    // MARK: - Token Storage Helpers
-    
-    private func loadAllAccessTokens() async throws -> [String: String]? {
-        let url = storageDirectory.appendingPathComponent(FileName.accessTokens)
-        guard let jsonString = try await loadEncrypted(from: url),
-              let jsonData = jsonString.data(using: .utf8) else {
-            return nil
+
+    private func loadAccessTokenListsDictionary() throws -> [String: [String]] {
+        guard let data = try loadData(kind: .accessTokenLists) else {
+            return [:]
         }
-        return try JSONDecoder().decode([String: String].self, from: jsonData)
+        return try JSONDecoder().decode([String: [String]].self, from: data)
     }
-    
-    private func saveAllAccessTokens(_ tokens: [String: String]) async throws {
-        let url = storageDirectory.appendingPathComponent(FileName.accessTokens)
-        let jsonData = try JSONEncoder().encode(tokens)
-        guard let jsonString = String(data: jsonData, encoding: .utf8) else {
+
+    private func saveAccessTokenListsDictionary(_ tokenLists: [String: [String]]) throws {
+        let data = try JSONEncoder().encode(tokenLists)
+        try saveData(data, kind: .accessTokenLists)
+    }
+
+    // MARK: - Encryption / Decryption
+
+    private func encrypt(_ plaintext: Data) throws -> Data {
+        let nonceData = try SecureRandom.generateBytes(count: configuration.nonceLength)
+        let nonceBytes = Array(nonceData)
+        let gcm = GCM(iv: nonceBytes, tagLength: 16, mode: .combined)
+        let aes = try AES(key: keyState.keyBytes, blockMode: gcm, padding: .noPadding)
+        let ciphertext = try aes.encrypt(Array(plaintext))
+
+        var envelope = Data()
+        envelope.append(Self.envelopeVersion)
+        envelope.append(UInt8(nonceBytes.count))
+        envelope.append(contentsOf: nonceBytes)
+        envelope.append(contentsOf: ciphertext)
+        return envelope
+    }
+
+    private func decrypt(_ envelope: Data) throws -> Data {
+        let bytes = Array(envelope)
+        guard bytes.count > 2 else {
             throw SecureStoreError.invalidData
         }
-        try await saveEncrypted(jsonString, to: url)
-    }
-    
-    private func loadAllAccessTokenLists() async throws -> [String: [String]]? {
-        let url = storageDirectory.appendingPathComponent(FileName.accessTokenLists)
-        guard let jsonString = try await loadEncrypted(from: url),
-              let jsonData = jsonString.data(using: .utf8) else {
-            return nil
+
+        let version = bytes[0]
+        guard version == Self.envelopeVersion else {
+            throw SecureStoreError.retrievalFailed("Unsupported envelope version \(version)")
         }
-        return try JSONDecoder().decode([String: [String]].self, from: jsonData)
-    }
-    
-    private func saveAllAccessTokenLists(_ tokenLists: [String: [String]]) async throws {
-        let url = storageDirectory.appendingPathComponent(FileName.accessTokenLists)
-        let jsonData = try JSONEncoder().encode(tokenLists)
-        guard let jsonString = String(data: jsonData, encoding: .utf8) else {
-            throw SecureStoreError.invalidData
+
+        let nonceLength = Int(bytes[1])
+        guard nonceLength > 0, bytes.count >= 2 + nonceLength else {
+            throw SecureStoreError.retrievalFailed("Corrupted envelope header")
         }
-        try await saveEncrypted(jsonString, to: url)
+
+        let nonce = Array(bytes[2..<(2 + nonceLength)])
+        let ciphertext = Array(bytes[(2 + nonceLength)...])
+
+        let gcm = GCM(iv: nonce, tagLength: 16, mode: .combined)
+        let aes = try AES(key: keyState.keyBytes, blockMode: gcm, padding: .noPadding)
+
+        let plaintext = try aes.decrypt(ciphertext)
+        return Data(plaintext)
     }
-    
-    // MARK: - Key Management
-    
-    private static func deriveKey(from password: String, storageDirectory: URL) async throws -> SymmetricKey {
-        let saltURL = storageDirectory.appendingPathComponent(FileName.keyDerivation)
-        
-        let salt: Data
-        if FileManager.default.fileExists(atPath: saltURL.path) {
-            salt = try Data(contentsOf: saltURL)
-        } else {
-            // Generate new salt
-            salt = try SecureRandom.generateBytes(count: 32)
-            try salt.write(to: saltURL)
-            try FileManager.default.setAttributes(
-                [.posixPermissions: 0o600],
-                ofItemAtPath: saltURL.path
+
+    // MARK: - Key Bootstrap & Persistence
+
+    private static func resolveDirectory(_ directory: URL?) -> URL {
+        if let directory {
+            return directory
+        }
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        return home.appendingPathComponent(".cashu/secure")
+    }
+
+    private static func prepareDirectory(_ directory: URL) throws {
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+    }
+
+    private static func hardenFile(at url: URL) throws {
+        try FileManager.default.setAttributes([
+            .posixPermissions: 0o600
+        ], ofItemAtPath: url.path)
+    }
+
+    private static func bootstrapKeyState(
+        configuration: Configuration,
+        storageDirectory: URL,
+        rotating: Bool
+    ) throws -> KeyState {
+        let keyURL = storageDirectory.appendingPathComponent(configuration.keyMaterialFileName)
+
+        if rotating {
+            return try createKeyState(
+                configuration: configuration,
+                storageDirectory: storageDirectory,
+                keyURL: keyURL,
+                overwrite: true
             )
         }
-        
-        // Derive key using PBKDF2
-        let passwordData = password.data(using: .utf8) ?? Data()
-        let keyData = try PKCS5.PBKDF2(
-            password: Array(passwordData),
-            salt: Array(salt),
-            iterations: 100_000,
+
+        if FileManager.default.fileExists(atPath: keyURL.path) {
+            return try loadExistingKeyState(
+                configuration: configuration,
+                keyURL: keyURL
+            )
+        } else {
+            return try createKeyState(
+                configuration: configuration,
+                storageDirectory: storageDirectory,
+                keyURL: keyURL,
+                overwrite: false
+            )
+        }
+    }
+
+    private static func loadExistingKeyState(
+        configuration: Configuration,
+        keyURL: URL
+    ) throws -> KeyState {
+        let data = try Data(contentsOf: keyURL)
+        let container = try JSONDecoder().decode(KeyContainer.self, from: data)
+
+        if let keyData = container.keyData {
+            return KeyState(keyBytes: Array(keyData), metadata: container.metadata)
+        }
+
+        guard let password = configuration.password,
+              let salt = container.metadata.salt,
+              let rounds = container.metadata.pbkdfRounds else {
+            throw SecureStoreError.retrievalFailed("Missing key material or password for file-based secure store")
+        }
+
+        let keyBytes = try deriveKey(
+            password: password,
+            salt: salt,
+            rounds: rounds
+        )
+
+        return KeyState(keyBytes: keyBytes, metadata: container.metadata)
+    }
+
+    private static func createKeyState(
+        configuration: Configuration,
+        storageDirectory: URL,
+        keyURL: URL,
+        overwrite: Bool
+    ) throws -> KeyState {
+        if overwrite, FileManager.default.fileExists(atPath: keyURL.path) {
+            try FileManager.default.removeItem(at: keyURL)
+        }
+
+        let metadata = KeyMetadata(
+            version: 1,
+            keyId: UUID(),
+            createdAt: Date(),
+            salt: nil,
+            pbkdfRounds: nil
+        )
+
+        let container: KeyContainer
+        let keyBytes: [UInt8]
+
+        if let password = configuration.password {
+            let salt = try SecureRandom.generateBytes(count: 32)
+            let derivedKey = try deriveKey(
+                password: password,
+                salt: salt,
+                rounds: configuration.pbkdfRounds
+            )
+            keyBytes = derivedKey
+            let saltedMetadata = KeyMetadata(
+                version: metadata.version,
+                keyId: metadata.keyId,
+                createdAt: metadata.createdAt,
+                salt: salt,
+                pbkdfRounds: configuration.pbkdfRounds
+            )
+            container = KeyContainer(metadata: saltedMetadata, keyData: nil)
+        } else {
+            let keyData = try SecureRandom.generateBytes(count: 32)
+            keyBytes = Array(keyData)
+            container = KeyContainer(metadata: metadata, keyData: keyData)
+        }
+
+        let encoded = try JSONEncoder().encode(container)
+        try encoded.write(to: keyURL, options: .atomic)
+        try hardenFile(at: keyURL)
+
+        return KeyState(keyBytes: keyBytes, metadata: container.metadata)
+    }
+
+    private static func deriveKey(password: String, salt: Data, rounds: Int) throws -> [UInt8] {
+        let passwordBytes = Array(password.utf8)
+        let saltBytes = Array(salt)
+        let derived = try PKCS5.PBKDF2(
+            password: passwordBytes,
+            salt: saltBytes,
+            iterations: rounds,
             keyLength: 32,
             variant: .sha2(.sha256)
         ).calculate()
-        
-        return SymmetricKey(data: Data(keyData))
-    }
-    
-    private static func generateOrLoadKey(storageDirectory: URL) async throws -> SymmetricKey {
-        let keyURL = storageDirectory.appendingPathComponent("key.enc")
-        
-        if FileManager.default.fileExists(atPath: keyURL.path) {
-            let keyData = try Data(contentsOf: keyURL)
-            return SymmetricKey(data: keyData)
-        } else {
-            // Generate new key
-            let key = SymmetricKey(size: .bits256)
-            let keyData = key.withUnsafeBytes { Data($0) }
-            try keyData.write(to: keyURL)
-            try FileManager.default.setAttributes(
-                [.posixPermissions: 0o600],
-                ofItemAtPath: keyURL.path
-            )
-            return key
-        }
+        return derived
     }
 }
 
-// MARK: - Convenience Factory
+// MARK: - Convenience factories
 
 public extension FileSecureStore {
-    /// Create a default file-based store with auto-generated key
     static func `default`() async throws -> FileSecureStore {
-        return try await FileSecureStore()
+        try await FileSecureStore()
     }
-    
-    /// Create a password-protected file-based store
-    /// - Parameter password: The password for key derivation
+
     static func withPassword(_ password: String) async throws -> FileSecureStore {
-        return try await FileSecureStore(password: password)
+        try await FileSecureStore(password: password)
     }
-    
-    /// Create a file-based store in a custom directory
-    /// - Parameters:
-    ///   - directory: The directory to use for storage
-    ///   - password: Optional password for key derivation
+
     static func withDirectory(_ directory: URL, password: String? = nil) async throws -> FileSecureStore {
-        return try await FileSecureStore(directory: directory, password: password)
+        try await FileSecureStore(directory: directory, password: password)
     }
 }

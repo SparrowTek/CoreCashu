@@ -17,7 +17,39 @@ public struct WalletConfiguration: Sendable {
     public let retryAttempts: Int
     public let retryDelay: TimeInterval
     public let operationTimeout: TimeInterval
+    #if canImport(Security) && !os(Linux)
+    /// Optional Keychain access-control policy to apply when CoreCashu provisions its default secure store on Apple platforms.
+    public let keychainAccessControl: KeychainSecureStore.Configuration.AccessControlPolicy?
+    internal var keychainConfiguration: KeychainSecureStore.Configuration {
+        KeychainSecureStore.Configuration(accessControl: keychainAccessControl)
+    }
+    #endif
     
+    /// Creates a new wallet configuration.
+    /// - Parameters:
+    ///   - mintURL: Base URL of the target mint.
+    ///   - unit: Display unit for balances (defaults to sat).
+    ///   - retryAttempts: Maximum retry attempts for idempotent requests.
+    ///   - retryDelay: Delay between retries in seconds.
+    ///   - operationTimeout: Timeout for network operations in seconds.
+    #if canImport(Security) && !os(Linux)
+    ///   - keychainAccessControl: Optional Keychain access-control policy applied to the default secure store.
+    public init(
+        mintURL: String,
+        unit: String = "sat",
+        retryAttempts: Int = 3,
+        retryDelay: TimeInterval = 1.0,
+        operationTimeout: TimeInterval = 30.0,
+        keychainAccessControl: KeychainSecureStore.Configuration.AccessControlPolicy? = nil
+    ) {
+        self.mintURL = mintURL
+        self.unit = unit
+        self.retryAttempts = retryAttempts
+        self.retryDelay = retryDelay
+        self.operationTimeout = operationTimeout
+        self.keychainAccessControl = keychainAccessControl
+    }
+    #else
     public init(
         mintURL: String,
         unit: String = "sat",
@@ -31,6 +63,7 @@ public struct WalletConfiguration: Sendable {
         self.retryDelay = retryDelay
         self.operationTimeout = operationTimeout
     }
+    #endif
 }
 
 // MARK: - Wallet State
@@ -177,7 +210,7 @@ public actor CashuWallet {
         if let secureStore {
             self.secureStore = secureStore
         } else {
-            self.secureStore = KeychainSecureStore()
+            self.secureStore = KeychainSecureStore(configuration: configuration.keychainConfiguration)
         }
         #else
         self.secureStore = secureStore
@@ -236,7 +269,7 @@ public actor CashuWallet {
         if let secureStore {
             self.secureStore = secureStore
         } else {
-            self.secureStore = KeychainSecureStore()
+            self.secureStore = KeychainSecureStore(configuration: configuration.keychainConfiguration)
         }
         #else
         self.secureStore = secureStore

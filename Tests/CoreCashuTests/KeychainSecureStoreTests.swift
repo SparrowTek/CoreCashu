@@ -108,5 +108,21 @@ struct KeychainSecureStoreTests {
 
         try await store.clearAll()
     }
+
+    @Test("Wallet configuration exposes Keychain access control")
+    func walletConfigurationExposesKeychainAccessControl() {
+        let configuration = WalletConfiguration(
+            mintURL: "https://mint.example.com",
+            keychainAccessControl: .biometryCurrentSet
+        )
+
+        let keychainConfiguration = configuration.keychainConfiguration
+        switch keychainConfiguration.accessControl {
+        case .biometryCurrentSet?:
+            #expect(Bool(true))
+        default:
+            #expect(Bool(false), "Expected biometryCurrentSet access control")
+        }
+    }
 }
 #endif

@@ -266,18 +266,18 @@ let restoredBalance = try await wallet.restoreFromSeed(batchSize: 100) { progres
 - The file-backed secure store encrypts at rest using AES.GCM, enforces `0o600` permissions, zeroizes files best-effort on deletion, and rejects malformed ciphertext.
 
 ### Secure storage status
-- `KeychainSecureStore` now backs Apple platforms by default, keeping mnemonics and tokens inside the system Keychain. Developers can opt into `AccessControlPolicy` settings (user presence, biometrics, passcode) once the host app carries the appropriate Keychain/biometric entitlements.
-- `FileSecureStore` remains the recommended option for Linux/server environments; pair it with host hardening and backup encryption.
-- `InMemorySecureStore` stays available for tests and ephemeral demos but should not be used for production secrets.
+- `KeychainSecureStore` now backs Apple platforms by default, keeping mnemonics and tokens inside the system Keychain. Manual validation and entitlement requirements are tracked in `Docs/keychain_secure_store_plan.md`. When building on Apple platforms you can require user presence, biometrics, or passcode enforcement via the wallet configuration's Keychain access-control settings (see ``WalletConfiguration``), e.g. `WalletConfiguration(mintURL: "…", keychainAccessControl: .userPresence)`.
+- `FileSecureStore` is the current hardened option for Linux/server environments; pair it with host hardening, filesystem permissions, and encrypted backups while the dedicated Linux secure store is under construction.
+- `InMemorySecureStore` stays available for tests and ephemeral demos but must not be used for production secrets.
 
 ### Threat model snapshot
-- **Device compromise:** Secrets reside on-disk when using `FileSecureStore`; loss of the host or weak filesystem permissions exposes mnemonics and access tokens. Mitigation relies on host hardening and pending Keychain integration.
+- **Local compromise:** Key material is Keychain-backed on Apple and AES.GCM-encrypted on Linux today, but biometric-gated usage still depends on host entitlements and validation on real devices. See `Docs/threat_model.md` for mitigation tables and residual risks.
 - **Network/mint surface:** HTTPS/TLS pinning, retry limits, and mint DOS protections are not yet implemented. Clients must assume the mint can observe request metadata until rate limiting and circuit breakers ship (see `Docs/production_gaps.md`).
 - **Implementation defects:** BIP39/BIP32 derivation is covered by deterministic tests, but additional BIP32 compliance vectors are still TODO in `Tests/CoreCashuTests/NUT13Tests.swift`. Serialization fuzzing and adversarial input suites are scheduled for Phase 6.
 
 ### Audit expectations
-- Third-party cryptography and security review is a release blocker. Threat model outline now lives in `Docs/threat_model.md`; incident response playbook will join `Docs/` as part of later phases.
-- Before commissioning the audit, we require completion of secure storage implementations, networking rate limiting/circuit breakers, and telemetry hooks to monitor key flows.
+- Third-party cryptography and security review is a release blocker. The draft threat model (`Docs/threat_model.md`) and keychain rollout plan (`Docs/keychain_secure_store_plan.md`) must be completed and reviewed before hand-off.
+- Before commissioning the audit, finish the secure storage program (Keychain hardened with AccessControl, Linux parity), add networking rate limiting/circuit breakers, and land telemetry hooks to monitor key flows.
 - Until those gates close, keep CoreCashu deployments limited to mocks, tests, or controlled demonstrations.
 
 ## Platform Support

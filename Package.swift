@@ -46,7 +46,10 @@ let package = Package(
         ),
         .testTarget(
             name: "CoreCashuTests",
-            dependencies: ["CoreCashu"]
+            dependencies: ["CoreCashu"],
+            swiftSettings: [
+                .define("TESTING")
+            ]
         ),
     ]
 )

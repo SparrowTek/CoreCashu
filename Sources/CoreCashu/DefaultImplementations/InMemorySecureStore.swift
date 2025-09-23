@@ -1,7 +1,9 @@
 import Foundation
 
-/// In-memory implementation of SecureStore for testing and non-persistent storage
-/// WARNING: This implementation stores sensitive data in memory and is NOT secure for production use
+/// In-memory implementation of `SecureStore` for testing and non-persistent storage.
+///
+/// WARNING: This implementation stores sensitive data in memory and is NOT secure for production use.
+@available(*, deprecated, message: "InMemorySecureStore is intended for tests and ephemeral demos. Use KeychainSecureStore (Apple) or FileSecureStore (Linux) in production builds.")
 public actor InMemorySecureStore: SecureStore {
     
     private var storage: [String: String] = [:]
@@ -104,7 +106,8 @@ public actor InMemorySecureStore: SecureStore {
 
 // MARK: - Thread-Safe Wrapper for Non-Actor Contexts
 
-/// A thread-safe wrapper around InMemorySecureStore for use in non-actor contexts
+/// A thread-safe wrapper around `InMemorySecureStore` for use in non-actor contexts.
+@available(*, deprecated, message: "InMemorySecureStoreWrapper is intended for tests and ephemeral demos. Use platform secure stores in production builds.")
 public final class InMemorySecureStoreWrapper: SecureStore, @unchecked Sendable {
     private let store = InMemorySecureStore()
     

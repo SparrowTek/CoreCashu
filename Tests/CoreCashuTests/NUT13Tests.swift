@@ -152,7 +152,7 @@ struct NUT13Tests {
     @Test("Wallet restoration from secure store")
     func testRestoreFromSecureStore() async throws {
         let mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
-        let secureStore = InMemorySecureStore()
+        let secureStore = try await FileSecureStore(directory: temporaryDirectory())
         try await secureStore.saveMnemonic(mnemonic)
         
         let configuration = WalletConfiguration(mintURL: "https://test.mint.example.com")
@@ -164,6 +164,13 @@ struct NUT13Tests {
         #expect(await wallet.state == .uninitialized)
         let loaded = try await secureStore.loadMnemonic()
         #expect(loaded == mnemonic)
+    }
+
+    private func temporaryDirectory() throws -> URL {
+        let base = FileManager.default.temporaryDirectory
+        let directory = base.appendingPathComponent("cashu-secure-store-tests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory
     }
 
     

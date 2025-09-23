@@ -33,53 +33,107 @@ extension JSONEncoder {
 
 @CashuActor
 class CashuRouterDelegate: NetworkRouterDelegate {
-    private let maxRetries = 3
-    private let baseDelay: TimeInterval = 0.2
-    private let rateLimiter = EndpointRateLimiter(defaultConfiguration: .default)
+    private let policy: NetworkingPolicy
+    private let rateLimiter: any EndpointRateLimiting
+    private let idempotencyKeyProvider: @Sendable (URLRequest) -> String
+    private let sleeper: any SleepProviding
     private var breakers: [String: EndpointCircuitBreaker] = [:]
-    private let breakerConfiguration = CircuitBreakerConfiguration()
+
+    init(
+        policy: NetworkingPolicy = .default,
+        rateLimiter: (any EndpointRateLimiting)? = nil,
+        idempotencyKeyProvider: (@Sendable (URLRequest) -> String)? = nil,
+        sleeper: any SleepProviding = TaskSleeper()
+    ) {
+        self.policy = policy
+        self.rateLimiter = rateLimiter ?? EndpointRateLimiter(defaultConfiguration: policy.rateLimit)
+        self.idempotencyKeyProvider = idempotencyKeyProvider ?? { _ in UUID().uuidString }
+        self.sleeper = sleeper
+    }
+
+    var maxRetryAttempts: Int { policy.retryPolicy.maxAttempts }
 
     func shouldRetry(error: any Error, attempts: Int) async throws -> Bool {
-        // Simple exponential backoff for transient network errors
-        guard attempts < maxRetries else { return false }
+        guard attempts < policy.retryPolicy.maxAttempts else { return false }
 
-        if let urlError = error as? URLError {
-            switch urlError.code {
-            case .timedOut, .cannotFindHost, .cannotConnectToHost, .networkConnectionLost, .dnsLookupFailed, .notConnectedToInternet:
-                try await Task.sleep(nanoseconds: UInt64((baseDelay * pow(2.0, Double(attempts))) * 1_000_000_000))
-                return true
+        var shouldRetry = false
+
+        if let networkError = error as? NetworkError {
+            switch networkError {
+            case .statusCode(let statusCode?, _):
+                shouldRetry = policy.retryPolicy.retryableStatusCodes.contains(statusCode)
+            case .statusCode(nil, _):
+                shouldRetry = false
+            case .noData, .noStatusCode:
+                shouldRetry = true
             default:
-                return false
+                shouldRetry = false
             }
+        } else if let urlError = error as? URLError {
+            shouldRetry = policy.retryPolicy.retryableURLErrorCodes.contains(urlError.code)
         }
 
-        return false
+        guard shouldRetry else { return false }
+
+        let backoff = policy.retryPolicy.baseDelay * pow(2.0, Double(max(attempts - 1, 0)))
+        let jitterRange = policy.retryPolicy.jitter
+        let jitter = jitterRange > 0 ? Double.random(in: -jitterRange...jitterRange) : 0
+        let sleepSeconds = max(0, backoff + jitter)
+        try await sleeper.sleep(seconds: sleepSeconds)
+        return true
     }
 
     func intercept(_ request: inout URLRequest) async {
-        // Basic rate limiting per endpoint path
         let path = request.url?.path ?? ""
-        _ = await rateLimiter.shouldAllowRequest(for: path)
+        if await !rateLimiter.shouldAllowRequest(for: path) {
+            try? await rateLimiter.waitForAvailability(for: path)
+        }
         await rateLimiter.recordRequest(for: path)
 
-        // Circuit breaker deny
+        applyIdempotencyKeyIfNeeded(&request)
+
         if let url = request.url {
             let key = url.host.map { $0 + url.path } ?? url.absoluteString
-            if breakers[key] == nil { breakers[key] = EndpointCircuitBreaker(configuration: breakerConfiguration) }
+            if breakers[key] == nil { breakers[key] = EndpointCircuitBreaker(configuration: policy.circuitBreaker) }
             if let breaker = breakers[key], await !breaker.allowRequest() {
                 request.addValue("1", forHTTPHeaderField: "X-Cashu-CB-Denied")
+            } else {
+                request.setValue(nil, forHTTPHeaderField: "X-Cashu-CB-Denied")
             }
         }
     }
 
     // MARK: - Circuit breaker hooks
     func breakerRecordSuccess(forKey key: String) async {
-        if breakers[key] == nil { breakers[key] = EndpointCircuitBreaker(configuration: breakerConfiguration) }
+        if breakers[key] == nil { breakers[key] = EndpointCircuitBreaker(configuration: policy.circuitBreaker) }
         await breakers[key]?.recordSuccess()
     }
 
     func breakerRecordFailure(forKey key: String) async {
-        if breakers[key] == nil { breakers[key] = EndpointCircuitBreaker(configuration: breakerConfiguration) }
+        if breakers[key] == nil { breakers[key] = EndpointCircuitBreaker(configuration: policy.circuitBreaker) }
         await breakers[key]?.recordFailure()
+    }
+
+    // MARK: - Helpers
+
+    private func applyIdempotencyKeyIfNeeded(_ request: inout URLRequest) {
+        guard let methodRaw = request.httpMethod,
+              let method = HTTPMethod(rawValue: methodRaw.uppercased()),
+              method.requiresIdempotencyKey,
+              request.value(forHTTPHeaderField: "Idempotency-Key")?.isEmpty ?? true
+        else { return }
+
+        request.setValue(idempotencyKeyProvider(request), forHTTPHeaderField: "Idempotency-Key")
+    }
+}
+
+private extension HTTPMethod {
+    var requiresIdempotencyKey: Bool {
+        switch self {
+        case .post, .put, .patch, .delete:
+            return true
+        default:
+            return false
+        }
     }
 }

@@ -11,6 +11,7 @@ protocol NetworkRouterDelegate: AnyObject {
     // Circuit breaker hooks
     func breakerRecordSuccess(forKey key: String) async
     func breakerRecordFailure(forKey key: String) async
+    var maxRetryAttempts: Int { get }
 }
 
 /// Describes the implementation details of a NetworkRouter
@@ -69,10 +70,12 @@ internal class NetworkRouter<Endpoint: EndpointType>: NetworkRouterProtocol {
         guard var request = try? await buildRequest(from: route) else { throw NetworkError.encodingFailed }
 
         // Attempt loop with delegate retry and circuit breaker feedback
+        let maxAttempts = await delegate?.maxRetryAttempts ?? 1
         var attempts = 0
         var lastError: (any Error)?
-        while attempts <= 5 { // hard max attempts
+        while attempts < maxAttempts {
             attempts += 1
+            request.setValue(nil, forHTTPHeaderField: "X-Cashu-CB-Denied")
             await delegate?.intercept(&request)
             // If circuit breaker denied, short-circuit
             if request.value(forHTTPHeaderField: "X-Cashu-CB-Denied") == "1" {

@@ -42,10 +42,11 @@
 - Add async XCTest replacements (Swift Testing) under `Tests/CoreCashuTests/SecureStoreKeychainTests.swift` using `KeychainSwiftTestDouble` if direct Keychain access unavailable in CI.
 - For device/simulator manual tests, document steps to inspect items using `security find-generic-password -s cashu.core.*`.
 - Validate concurrent save/load/delete operations to ensure actor isolation works as expected.
+- Implemented `KeychainSecureStoreShimTests` (2025-09-23) which compiles under the `TESTING` flag and exercises a shimmed in-memory store to keep CI green without Keychain entitlements.
 
 ## 8. Migration Plan
-- Update wallet factory defaults: prefer `KeychainSecureStore` on Apple platforms, fall back to `FileSecureStore`/`InMemorySecureStore` elsewhere.
-- Mark `InMemorySecureStore` as deprecated for production via availability annotations once Keychain version lands.
+- Update wallet factory defaults: prefer `KeychainSecureStore` on Apple platforms, fall back to `FileSecureStore` elsewhere (DONE 2025-09-23).
+- Mark `InMemorySecureStore` as deprecated for production via availability annotations once Keychain version lands (DONE 2025-09-23).
 - Update README security section with new guidance and add manual testing checklist to `Docs/operational_checklist.md` (future work).
 
 ## 11. Manual Validation Checklist

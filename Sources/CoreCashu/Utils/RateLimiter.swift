@@ -176,7 +176,13 @@ public struct RateLimitStatus: Sendable {
 
 // MARK: - Per-Endpoint Rate Limiting
 
-public actor EndpointRateLimiter {
+public protocol EndpointRateLimiting: Sendable {
+    func shouldAllowRequest(for endpoint: String) async -> Bool
+    func waitForAvailability(for endpoint: String) async throws
+    func recordRequest(for endpoint: String) async
+}
+
+public actor EndpointRateLimiter: EndpointRateLimiting {
     private var limiters: [String: RateLimiter] = [:]
     private let defaultConfiguration: RateLimitConfiguration
     private let endpointConfigurations: [String: RateLimitConfiguration]

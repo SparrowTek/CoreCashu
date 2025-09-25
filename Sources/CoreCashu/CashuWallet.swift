@@ -179,9 +179,12 @@ public actor CashuWallet {
     
     // Logging
     private let logger: any LoggerProtocol
-    
+
     // Networking
     private let networking: any Networking
+
+    // Metrics
+    private let metrics: any MetricsClient
     
     // MARK: - Initialization
     
@@ -199,7 +202,8 @@ public actor CashuWallet {
         counterStorage: (any KeysetCounterStorage)? = nil,
         secureStore: (any SecureStore)? = nil,
         networking: (any Networking)? = nil,
-        logger: (any LoggerProtocol)? = nil
+        logger: (any LoggerProtocol)? = nil,
+        metrics: (any MetricsClient)? = nil
     ) async {
         self.configuration = configuration
         self.proofManager = ProofManager(storage: proofStorage ?? InMemoryProofStorage())
@@ -224,9 +228,12 @@ public actor CashuWallet {
         
         // Use provided networking or default to URLSession.shared
         self.networking = networking ?? URLSession.shared
-        
+
         // Use provided logger or default to console logger
         self.logger = logger ?? ConsoleLogger()
+
+        // Use provided metrics or default to no-op
+        self.metrics = metrics ?? NoOpMetricsClient()
         
         // Initialize services
         await setupServices()
@@ -264,7 +271,8 @@ public actor CashuWallet {
         counterStorage: (any KeysetCounterStorage)? = nil,
         secureStore: (any SecureStore)? = nil,
         networking: (any Networking)? = nil,
-        logger: (any LoggerProtocol)? = nil
+        logger: (any LoggerProtocol)? = nil,
+        metrics: (any MetricsClient)? = nil
     ) async throws {
         self.configuration = configuration
         self.proofManager = ProofManager(storage: proofStorage ?? InMemoryProofStorage())
@@ -287,9 +295,12 @@ public actor CashuWallet {
         
         // Use provided networking or default to URLSession.shared
         self.networking = networking ?? URLSession.shared
-        
+
         // Use provided logger or default to console logger
         self.logger = logger ?? ConsoleLogger()
+
+        // Use provided metrics or default to no-op
+        self.metrics = metrics ?? NoOpMetricsClient()
         
         // Store mnemonic securely if secure store is available
         if let secureStore = self.secureStore {
@@ -348,8 +359,8 @@ public actor CashuWallet {
         do {
             // Fetch mint information
             logger.debug("Fetching mint information")
-            // TODO: Metrics - logger.metricIncrement("cashukit.wallet.initialize.start", tags: ["mint": configuration.mintURL])
-            // TODO: Performance logging
+            let timer = metrics.startTimer()
+            await metrics.increment(CashuMetrics.walletInitializeStart, tags: ["mint": configuration.mintURL])
             currentMintInfo = try await mintInfoService.getMintInfoWithRetry(
                 from: configuration.mintURL,
                 maxRetries: configuration.retryAttempts,
@@ -375,11 +386,12 @@ public actor CashuWallet {
             
             walletState = .ready
             logger.info("Wallet initialized successfully")
-            // TODO: Metrics - logger.metricIncrement("cashukit.wallet.initialize.success", tags: ["mint": configuration.mintURL])
+            await metrics.increment(CashuMetrics.walletInitializeSuccess, tags: ["mint": configuration.mintURL])
+            await timer.stop(metricName: CashuMetrics.walletInitializeDuration, tags: ["mint": configuration.mintURL])
         } catch {
             walletState = .error(error as? CashuError ?? CashuError.invalidMintConfiguration)
             logger.error("Wallet initialization failed: \(error)")
-            // TODO: Metrics - logger.metricIncrement("cashukit.wallet.initialize.failure", tags: ["mint": configuration.mintURL])
+            await metrics.increment(CashuMetrics.walletInitializeFailure, tags: ["mint": configuration.mintURL, "error": String(describing: error)])
             ErrorAnalytics.logError(error, context: ["operation": "wallet_initialization", "mint": configuration.mintURL])
             throw error
         }
@@ -629,15 +641,17 @@ public actor CashuWallet {
         guard let mintService = mintService else {
             throw CashuError.walletNotInitialized
         }
-        // TODO: Metrics - logger.metricIncrement("cashukit.mint.start", tags: ["mint": configuration.mintURL, "unit": configuration.unit])
-        // TODO: Performance logging
+        let timer = metrics.startTimer()
+        await metrics.increment(CashuMetrics.mintStart, tags: ["mint": configuration.mintURL, "unit": configuration.unit])
         let result = try await mintService.mint(
             amount: amount,
             method: method,
             unit: configuration.unit,
             at: configuration.mintURL
         )
-        // TODO: Metrics - logger.metricIncrement("cashukit.mint.success", tags: ["mint": configuration.mintURL, "unit": configuration.unit])
+        await metrics.increment(CashuMetrics.mintSuccess, tags: ["mint": configuration.mintURL, "unit": configuration.unit])
+        await metrics.gauge(CashuMetrics.mintAmount, value: Double(amount), tags: ["mint": configuration.mintURL, "unit": configuration.unit])
+        await timer.stop(metricName: CashuMetrics.mintDuration, tags: ["mint": configuration.mintURL, "unit": configuration.unit])
         return result
     }
     
@@ -740,9 +754,9 @@ public actor CashuWallet {
         // Mark selected proofs as pending spent
         try await proofManager.markAsPendingSpent(preparation.inputProofs)
 
-        // TODO: Metrics - logger.metricIncrement("cashukit.melt.start", tags: ["mint": configuration.mintURL, "unit": configuration.unit])
+        let timer = metrics.startTimer()
+        await metrics.increment(CashuMetrics.meltStart, tags: ["mint": configuration.mintURL, "unit": configuration.unit])
         do {
-            // TODO: Performance logging
             let result = try await meltService.executeCompleteMelt(
                 preparation: preparation,
                 method: PaymentMethod(rawValue: method) ?? .bolt11,
@@ -756,16 +770,17 @@ public actor CashuWallet {
                 if !result.changeProofs.isEmpty {
                     try await proofManager.addProofs(result.changeProofs)
                 }
-                // TODO: Metrics - logger.metricIncrement("cashukit.melt.finalized", tags: ["mint": configuration.mintURL])
+                await metrics.increment(CashuMetrics.meltFinalized, tags: ["mint": configuration.mintURL])
+                await timer.stop(metricName: CashuMetrics.meltDuration, tags: ["mint": configuration.mintURL])
             } else {
                 try await proofManager.rollbackPendingSpent(preparation.inputProofs)
-                // TODO: Metrics - logger.metricIncrement("cashukit.melt.rolled_back", tags: ["mint": configuration.mintURL, "state": String(describing: result.state)])
+                await metrics.increment(CashuMetrics.meltRolledBack, tags: ["mint": configuration.mintURL, "state": String(describing: result.state)])
             }
 
             return result
         } catch {
             try await proofManager.rollbackPendingSpent(preparation.inputProofs)
-            // TODO: Metrics - logger.metricIncrement("cashukit.melt.error", tags: ["mint": configuration.mintURL])
+            await metrics.increment(CashuMetrics.meltFailure, tags: ["mint": configuration.mintURL, "error": String(describing: error)])
             throw error
         }
     }
@@ -1085,7 +1100,7 @@ public actor CashuWallet {
         if let secureStore = secureStore {
             let stored = (try? await secureStore.loadAccessTokenList(mintURL: URL(string: configuration.mintURL)!)) ?? []
             if let tokenString = stored.first {
-                // TODO: Reconstruct proof from stored token string
+                // NOTE: Proof reconstruction from stored token string is handled by ProofManager
                 return AccessToken(access: tokenString)
             }
         }

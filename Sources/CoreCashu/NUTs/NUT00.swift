@@ -10,6 +10,28 @@ import Foundation
 @preconcurrency import P256K
 import CryptoKit
 
+/// NUT-00: Blind Diffie-Hellman Key Exchange (BDHKE)
+///
+/// This module implements the core cryptographic protocol for Cashu, based on
+/// blind signatures using the secp256k1 elliptic curve. The BDHKE protocol
+/// enables privacy-preserving token minting and verification.
+///
+/// ## Specification Reference
+/// - Section 1: Overview - Defines BDHKE as the core protocol
+/// - Section 2: Model - Alice (user) and Bob (mint) roles
+/// - Section 3: Protocol - Detailed steps for blinding and signing
+/// - Section 4: Blind Signatures - Mathematical operations for blinding
+/// - Section 5: Blinded Messages - Hash-to-curve and point operations
+///
+/// ## Key Components
+/// - Hash-to-curve function (hashToCurve) - Maps messages to curve points
+/// - Blinding factor generation - Creates random blinding factors
+/// - Blind signature verification - Validates mint signatures
+///
+/// ## Security Properties
+/// - Unlinkability: Mint cannot link blinded messages to unblinded tokens
+/// - Unforgeability: Only the mint can create valid signatures
+/// - Privacy: User's messages remain hidden from the mint
 // MARK: - NUT-00: Blind Diffie-Hellman Key Exchange
 
 // MARK: - KeyAgreement PublicKey Extensions

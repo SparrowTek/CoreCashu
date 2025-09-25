@@ -152,39 +152,39 @@ public actor CashuWallet {
     
     // MARK: - Properties
     
-    private let configuration: WalletConfiguration
-    private let proofManager: ProofManager
-    private let mintInfoService: MintInfoService
+    public let configuration: WalletConfiguration
+    internal let proofManager: ProofManager
+    internal let mintInfoService: MintInfoService
     
-    private var mintService: MintService?
-    private var meltService: MeltService?
-    private var swapService: SwapService?
-    private var keyExchangeService: KeyExchangeService?
-    private var keysetManagementService: KeysetManagementService?
-    private var checkStateService: CheckStateService?
-    private var accessTokenService: AccessTokenService?
+    internal var mintService: MintService?
+    internal var meltService: MeltService?
+    internal var swapService: SwapService?
+    internal var keyExchangeService: KeyExchangeService?
+    internal var keysetManagementService: KeysetManagementService?
+    internal var checkStateService: CheckStateService?
+    internal var accessTokenService: AccessTokenService?
     
-    private var currentMintInfo: MintInfo?
-    private var currentKeysets: [String: Keyset] = [:]
-    private var currentKeysetInfos: [String: KeysetInfo] = [:]
-    private var walletState: WalletState = .uninitialized
-    private var capabilityManager: MintFeatureCapabilityManager?
+    public private(set) var currentMintInfo: MintInfo?
+    public private(set) var currentKeysets: [String: Keyset] = [:]
+    internal var currentKeysetInfos: [String: KeysetInfo] = [:]
+    public private(set) var walletState: WalletState = .uninitialized
+    internal var capabilityManager: MintFeatureCapabilityManager?
     
     // NUT-13: Deterministic secrets
-    private var deterministicDerivation: DeterministicSecretDerivation?
-    private let keysetCounterManager: KeysetCounterManager
+    internal var deterministicDerivation: DeterministicSecretDerivation?
+    internal let keysetCounterManager: KeysetCounterManager
     
     // Security: Secure storage
-    private let secureStore: (any SecureStore)?
+    internal let secureStore: (any SecureStore)?
     
     // Logging
-    private let logger: any LoggerProtocol
+    internal let logger: any LoggerProtocol
 
     // Networking
-    private let networking: any Networking
+    internal let networking: any Networking
 
     // Metrics
-    private let metrics: any MetricsClient
+    public let metrics: any MetricsClient
     
     // MARK: - Initialization
     

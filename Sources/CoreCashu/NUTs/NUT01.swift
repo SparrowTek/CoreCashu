@@ -8,10 +8,30 @@
 
 import Foundation
 
+/// NUT-01: Mint Public Key Exchange and Keysets
+///
+/// This specification defines how wallets discover and manage mint public keys,
+/// which are essential for the BDHKE protocol. Mints organize keys into keysets
+/// identified by unique IDs.
+///
+/// ## Specification Reference
+/// - Section 1: Keysets - Collections of public keys with unique IDs
+/// - Section 2: Keyset ID - Derivation and format specification
+/// - Section 3: Multiple Keysets - Support for key rotation and units
+/// - Section 4: Active Keysets - Current vs historical keysets
+/// - Section 5: Input Fees - Optional fees for token operations
+///
+/// ## Key Components
+/// - Keyset: Collection of amount-to-publickey mappings
+/// - Keyset ID: 8-byte identifier derived from keyset keys
+/// - Active/Inactive states: Lifecycle management
+/// - Currency units: Multi-currency support
+///
+/// ## Implementation Notes
+/// - Keysets enable key rotation without breaking existing tokens
+/// - Multiple keysets allow gradual migration during updates
+/// - Input fees support sustainable mint operations
 // MARK: - NUT-01: Mint public key exchange
-
-/// NUT-01: Mint public key exchange
-/// This NUT defines how wallets receive public keys from mints
 
 // MARK: - Currency Units
 

@@ -41,7 +41,7 @@ struct HTLCIntegrationTests {
         // Setup
         let wallet = await createTestWallet()
         let locktime = Date().addingTimeInterval(3600) // 1 hour from now
-        let refundKey = "02" + String(repeating: "a", 64) // Mock public key
+        let refundKey = "02" + String(repeating: "a", count: 64) // Mock public key
         let amount = 200
 
         await setupMockProofs(wallet: wallet, amount: 1000)
@@ -66,8 +66,8 @@ struct HTLCIntegrationTests {
         // Setup
         let wallet = await createTestWallet()
         let authorizedKeys = [
-            "02" + String(repeating: "b", 64),
-            "02" + String(repeating: "c", 64)
+            "02" + String(repeating: "b", count: 64),
+            "02" + String(repeating: "c", count: 64)
         ]
         let amount = 150
 
@@ -151,8 +151,8 @@ struct HTLCIntegrationTests {
         // Setup
         let wallet = await createTestWallet()
         let pastLocktime = Date().addingTimeInterval(-3600) // 1 hour ago
-        let refundKey = "02" + String(repeating: "d", 64)
-        let refundPrivateKey = String(repeating: "e", 64)
+        let refundKey = "02" + String(repeating: "d", count: 64)
+        let refundPrivateKey = String(repeating: "e", count: 64)
         let amount = 200
 
         await setupMockProofs(wallet: wallet, amount: 1000)
@@ -186,8 +186,8 @@ struct HTLCIntegrationTests {
         // Setup
         let wallet = await createTestWallet()
         let futureLocktime = Date().addingTimeInterval(3600) // 1 hour from now
-        let refundKey = "02" + String(repeating: "f", 64)
-        let refundPrivateKey = String(repeating: "g", 64)
+        let refundKey = "02" + String(repeating: "f", count: 64)
+        let refundPrivateKey = String(repeating: "g", count: 64)
         let amount = 200
 
         await setupMockProofs(wallet: wallet, amount: 1000)
@@ -220,7 +220,7 @@ struct HTLCIntegrationTests {
         // Setup
         let wallet = await createTestWallet()
         let locktime = Date().addingTimeInterval(3600)
-        let refundKey = "02" + String(repeating: "h", 64)
+        let refundKey = "02" + String(repeating: "h", count: 64)
         let amount = 300
 
         await setupMockProofs(wallet: wallet, amount: 1000)
@@ -254,8 +254,8 @@ struct HTLCIntegrationTests {
     func testHTLCWithSignatures() async throws {
         // Setup
         let wallet = await createTestWallet()
-        let authorizedKeys = ["02" + String(repeating: "i", 64)]
-        let signatures = [String(repeating: "j", 128)] // Mock signature
+        let authorizedKeys = ["02" + String(repeating: "i", count: 64)]
+        let signatures = [String(repeating: "j", count: 128)] // Mock signature
         let amount = 250
 
         await setupMockProofs(wallet: wallet, amount: 1000)
@@ -385,17 +385,15 @@ struct HTLCIntegrationTests {
 
 // MARK: - Mock Networking
 
-class MockNetworking: Networking {
-    func send(_ request: any Request) async throws -> Response {
+final class MockNetworking: Networking, @unchecked Sendable {
+    func data(for request: URLRequest, delegate: (any URLSessionTaskDelegate)?) async throws -> (Data, URLResponse) {
         // Mock implementation for testing
-        Response(data: Data(), response: HTTPURLResponse())
-    }
-
-    func data(from url: URL) async throws -> (Data, URLResponse) {
-        (Data(), URLResponse())
-    }
-
-    func data(for request: URLRequest) async throws -> (Data, URLResponse) {
-        (Data(), URLResponse())
+        let response = HTTPURLResponse(
+            url: request.url ?? URL(string: "https://mint.example.com")!,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: nil
+        )!
+        return (Data(), response)
     }
 }

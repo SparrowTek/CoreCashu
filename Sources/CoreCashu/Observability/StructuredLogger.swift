@@ -70,7 +70,7 @@ public final class StructuredLogger: LoggerProtocol, @unchecked Sendable {
 
     public func debug(
         _ message: @autoclosure () -> String,
-        metadata: [String: Any]?,
+        metadata: [String: any Sendable]?,
         file: String,
         function: String,
         line: UInt
@@ -80,7 +80,7 @@ public final class StructuredLogger: LoggerProtocol, @unchecked Sendable {
 
     public func info(
         _ message: @autoclosure () -> String,
-        metadata: [String: Any]?,
+        metadata: [String: any Sendable]?,
         file: String,
         function: String,
         line: UInt
@@ -90,7 +90,7 @@ public final class StructuredLogger: LoggerProtocol, @unchecked Sendable {
 
     public func warning(
         _ message: @autoclosure () -> String,
-        metadata: [String: Any]?,
+        metadata: [String: any Sendable]?,
         file: String,
         function: String,
         line: UInt
@@ -100,7 +100,7 @@ public final class StructuredLogger: LoggerProtocol, @unchecked Sendable {
 
     public func error(
         _ message: @autoclosure () -> String,
-        metadata: [String: Any]?,
+        metadata: [String: any Sendable]?,
         file: String,
         function: String,
         line: UInt
@@ -110,7 +110,7 @@ public final class StructuredLogger: LoggerProtocol, @unchecked Sendable {
 
     public func critical(
         _ message: @autoclosure () -> String,
-        metadata: [String: Any]?,
+        metadata: [String: any Sendable]?,
         file: String,
         function: String,
         line: UInt
@@ -123,7 +123,7 @@ public final class StructuredLogger: LoggerProtocol, @unchecked Sendable {
     private func log(
         level: LogLevel,
         _ message: String,
-        metadata: [String: Any]?,
+        metadata: [String: any Sendable]?,
         file: String,
         function: String,
         line: UInt

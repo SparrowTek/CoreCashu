@@ -10,7 +10,7 @@ import Testing
 import Foundation
 @preconcurrency import P256K
 
-@Suite("Performance Benchmarks")
+@Suite("Performance Benchmarks", .serialized)
 struct PerformanceBenchmarksSimple {
     
     @Test("Simple cache performance")

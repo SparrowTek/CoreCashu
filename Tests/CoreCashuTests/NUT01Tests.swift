@@ -8,7 +8,7 @@
 import Testing
 @testable import CoreCashu
 
-@Suite("NUT01 tests")
+@Suite("NUT01 tests", .serialized)
 struct NUT01Tests {
     
     @Test

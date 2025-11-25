@@ -2,7 +2,7 @@ import Testing
 @testable import CoreCashu
 import Foundation
 
-@Suite("Token Round-Trip Tests")
+@Suite("Token Round-Trip Tests", .serialized)
 struct TokenRoundTripTests {
     
     @Test("Token serialization preserves all data")

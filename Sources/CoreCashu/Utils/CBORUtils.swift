@@ -130,9 +130,20 @@ private func cborToSwiftValue(_ cbor: CBOR) -> Any {
             // We'll keep it as Int for now, but the decoder will handle conversion
             return Int(uint)
         }
+        // Safely convert to Int if it fits, otherwise keep as UInt64
+        if uint <= UInt64(Int.max) {
+            return Int(uint)
+        }
         return uint
-    case .negativeInt(let int):
-        return -Int(int) - 1
+    case .negativeInt(let uint):
+        // CBOR encodes negative integers as -(uint + 1)
+        // So negativeInt(0) = -1, negativeInt(1) = -2, etc.
+        // Safely handle potential overflow
+        if uint <= UInt64(Int.max) {
+            return -Int(uint) - 1
+        }
+        // For very large negative numbers, return as Int64.min as a safe fallback
+        return Int.min
     case .boolean(let bool):
         return bool
     case .null:

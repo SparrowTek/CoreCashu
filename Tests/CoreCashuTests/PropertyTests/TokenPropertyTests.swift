@@ -2,7 +2,7 @@ import Testing
 @testable import CoreCashu
 import Foundation
 
-@Suite("Token Property-Based Tests")
+@Suite("Token Property-Based Tests", .serialized)
 struct TokenPropertyTests {
 
     // MARK: - Property Definitions
@@ -85,7 +85,7 @@ struct TokenPropertyTests {
                 )
             }
 
-            let token = CashuToken(
+            _ = CashuToken(
                 token: [TokenEntry(mint: "https://test", proofs: proofs)],
                 unit: "sat"
             )
@@ -167,7 +167,7 @@ struct TokenPropertyTests {
         ]
 
         for mintURL in testMints {
-            let entry = TokenEntry(
+            _ = TokenEntry(
                 mint: mintURL,
                 proofs: [Proof(amount: 1, id: "test", secret: "test", C: "test")]
             )
@@ -298,7 +298,7 @@ struct TokenPropertyTests {
 
 // MARK: - Additional Property Tests
 
-@Suite("Cryptographic Property Tests")
+@Suite("Cryptographic Property Tests", .serialized)
 struct CryptographicPropertyTests {
 
     /// Property: Secret generation produces unique values

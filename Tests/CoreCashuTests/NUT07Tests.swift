@@ -2,12 +2,12 @@ import Testing
 @testable import CoreCashu
 import Foundation
 
-@Suite("NUT07 tests")
+@Suite("NUT07 tests", .serialized)
 struct NUT07TestsExtra {
     @Test
     func mixedSpentUnspentSelection() async throws {
         let storage = InMemoryProofStorage()
-        let manager = await ProofManager(storage: storage)
+        let manager = ProofManager(storage: storage)
 
         let p1 = Proof(amount: 1, id: "k1", secret: "s1", C: "c1")
         let p2 = Proof(amount: 2, id: "k1", secret: "s2", C: "c2")
@@ -48,7 +48,7 @@ import Testing
 import Foundation
 @testable import CoreCashu
 
-@Suite("NUT07 tests")
+@Suite("NUT07 tests", .serialized)
 struct NUT07Tests {
     
     // MARK: - ProofState Tests

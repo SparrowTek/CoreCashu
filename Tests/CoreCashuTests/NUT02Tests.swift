@@ -8,7 +8,7 @@
 import Testing
 @testable import CoreCashu
 
-@Suite("NUT02 tests")
+@Suite("NUT02 tests", .serialized)
 struct NUT02Tests {
     
     // MARK: - KeysetInfo Tests
@@ -384,7 +384,7 @@ struct NUT02Tests {
     
     @Test
     func keysetManagementServiceInitialization() async {
-        let service = await KeysetManagementService()
+        _ = await KeysetManagementService()
         // Service is successfully created
     }
     

@@ -4,7 +4,7 @@ import Foundation
 
 /// Comprehensive stress tests for concurrent operations in CoreCashu
 /// These tests validate race conditions, deadlock prevention, and data consistency
-@Suite("Concurrency Stress Tests")
+@Suite("Concurrency Stress Tests", .serialized)
 struct ConcurrencyStressTests {
 
     // MARK: - Test Setup
@@ -327,7 +327,7 @@ struct ConcurrencyStressTests {
 
 // MARK: - Extended Stress Tests
 
-@Suite("Extended Concurrency Stress Tests")
+@Suite("Extended Concurrency Stress Tests", .serialized)
 struct ExtendedConcurrencyStressTests {
 
     @Test("Cancellation propagation in task hierarchies")

@@ -2,7 +2,7 @@ import Testing
 @testable import CoreCashu
 import Foundation
 
-@Suite("NUT11 - Pay to Public Key (P2PK)")
+@Suite("NUT11 - Pay to Public Key (P2PK)", .serialized)
 struct NUT11Tests {
     
     @Test("P2PKWitness serialization")

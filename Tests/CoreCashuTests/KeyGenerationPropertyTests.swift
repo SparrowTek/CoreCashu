@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import CoreCashu
 
-@Suite("Key Generation Property Tests")
+@Suite("Key Generation Property Tests", .serialized)
 struct KeyGenerationPropertyTests {
     @Test
     func secretsHaveExpectedShape() throws {

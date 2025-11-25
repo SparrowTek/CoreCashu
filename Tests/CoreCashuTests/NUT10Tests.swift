@@ -2,7 +2,7 @@ import Testing
 @testable import CoreCashu
 import Foundation
 
-@Suite("NUT10 - Spending conditions")
+@Suite("NUT10 - Spending conditions", .serialized)
 struct NUT10Tests {
     
     @Test("Well-known secret serialization")

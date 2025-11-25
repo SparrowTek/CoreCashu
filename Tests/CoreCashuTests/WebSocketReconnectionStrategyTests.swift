@@ -2,10 +2,10 @@ import Testing
 import Foundation
 @testable import CoreCashu
 
-@Suite("WebSocket Reconnection Strategy Tests")
+@Suite("WebSocket Reconnection Strategy Tests", .serialized)
 struct WebSocketReconnectionStrategyTests {
 
-    @Suite("Exponential Backoff Strategy")
+    @Suite("Exponential Backoff Strategy", .serialized)
     struct ExponentialBackoffTests {
 
         @Test("Initial delay calculation")
@@ -132,7 +132,7 @@ struct WebSocketReconnectionStrategyTests {
         }
     }
 
-    @Suite("Fixed Interval Strategy")
+    @Suite("Fixed Interval Strategy", .serialized)
     struct FixedIntervalTests {
 
         @Test("Constant delay")
@@ -168,7 +168,7 @@ struct WebSocketReconnectionStrategyTests {
         }
     }
 
-    @Suite("No Reconnection Strategy")
+    @Suite("No Reconnection Strategy", .serialized)
     struct NoReconnectionTests {
 
         @Test("No delay")

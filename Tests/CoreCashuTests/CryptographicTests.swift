@@ -3,7 +3,7 @@ import Testing
 import Foundation
 import P256K
 
-@Suite("Cryptographic tests")
+@Suite("Cryptographic tests", .serialized)
 struct CryptographicTests {
     
     // MARK: - Key Generation Tests

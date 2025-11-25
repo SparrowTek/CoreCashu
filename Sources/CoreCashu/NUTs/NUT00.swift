@@ -40,9 +40,11 @@ extension P256K.KeyAgreement.PublicKey {
     /// Negates a public key by converting to Signing.PublicKey and back
     public var negation: P256K.KeyAgreement.PublicKey {
         get throws {
-            let signingKey = try P256K.Signing.PublicKey(dataRepresentation: self.dataRepresentation, format: .compressed)
-            let negatedSigningKey = try signingKey.negation
-            return try P256K.KeyAgreement.PublicKey(dataRepresentation: negatedSigningKey.dataRepresentation, format: .compressed)
+            try CryptoLock.shared.withLock {
+                let signingKey = try P256K.Signing.PublicKey(dataRepresentation: self.dataRepresentation, format: .compressed)
+                let negatedSigningKey = try signingKey.negation
+                return try P256K.KeyAgreement.PublicKey(dataRepresentation: negatedSigningKey.dataRepresentation, format: .compressed)
+            }
         }
     }
 }
@@ -53,33 +55,35 @@ extension P256K.KeyAgreement.PublicKey {
 /// Y = hash_to_curve(x) where x is the secret message
 /// Implementation follows NUT-00: Y = PublicKey('02' || SHA256(msg_hash || counter))
 public func hashToCurve(_ message: Data) throws -> P256K.KeyAgreement.PublicKey {
-    /// Domain separator for hash-to-curve operations in Cashu
-    guard let DOMAIN_SEPARATOR = "Secp256k1_HashToCurve_Cashu_".data(using: .utf8) else { throw CashuError.domainSeperator }
-    
-    // Create message hash: SHA256(DOMAIN_SEPARATOR || x)
-    let msgHash = SHA256.hash(data: DOMAIN_SEPARATOR + message)
-    
-    // Try different counter values until we find a valid point
-    for counter in 0..<UInt32.max {
-        // Convert counter to little-endian bytes
-        let counterBytes = withUnsafeBytes(of: counter.littleEndian) { Data($0) }
-        
-        // Create candidate: SHA256(msg_hash || counter)
-        let candidate = SHA256.hash(data: Data(msgHash) + counterBytes)
-        
-        // Try to create a public key with prefix '02' (compressed format)
-        let candidateWithPrefix = Data([0x02]) + candidate
-        
-        do {
-            let publicKey = try P256K.KeyAgreement.PublicKey(dataRepresentation: candidateWithPrefix, format: .compressed)
-            return publicKey
-        } catch {
-            // This candidate doesn't form a valid point, try next counter
-            continue
+    try CryptoLock.shared.withLock {
+        /// Domain separator for hash-to-curve operations in Cashu
+        guard let DOMAIN_SEPARATOR = "Secp256k1_HashToCurve_Cashu_".data(using: .utf8) else { throw CashuError.domainSeperator }
+
+        // Create message hash: SHA256(DOMAIN_SEPARATOR || x)
+        let msgHash = SHA256.hash(data: DOMAIN_SEPARATOR + message)
+
+        // Try different counter values until we find a valid point
+        for counter in 0..<UInt32.max {
+            // Convert counter to little-endian bytes
+            let counterBytes = withUnsafeBytes(of: counter.littleEndian) { Data($0) }
+
+            // Create candidate: SHA256(msg_hash || counter)
+            let candidate = SHA256.hash(data: Data(msgHash) + counterBytes)
+
+            // Try to create a public key with prefix '02' (compressed format)
+            let candidateWithPrefix = Data([0x02]) + candidate
+
+            do {
+                let publicKey = try P256K.KeyAgreement.PublicKey(dataRepresentation: candidateWithPrefix, format: .compressed)
+                return publicKey
+            } catch {
+                // This candidate doesn't form a valid point, try next counter
+                continue
+            }
         }
+
+        throw CashuError.hashToCurveFailed
     }
-    
-    throw CashuError.hashToCurveFailed
 }
 
 /// Convenience function for string messages
@@ -95,16 +99,18 @@ public func hashToCurve(_ message: String) throws -> P256K.KeyAgreement.PublicKe
 
 /// Get the secp256k1 generator point G
 public func getGeneratorPoint() throws -> P256K.KeyAgreement.PublicKey {
-    // Create a private key with value 1 to get G = 1*G
-    let oneData = Data([
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01
-    ])
-    
-    let privateKeyOne = try P256K.KeyAgreement.PrivateKey(dataRepresentation: oneData)
-    return privateKeyOne.publicKey
+    try CryptoLock.shared.withLock {
+        // Create a private key with value 1 to get G = 1*G
+        let oneData = Data([
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01
+        ])
+
+        let privateKeyOne = try P256K.KeyAgreement.PrivateKey(dataRepresentation: oneData)
+        return privateKeyOne.publicKey
+    }
 }
 
 // MARK: - Scalar Multiplication
@@ -112,30 +118,34 @@ public func getGeneratorPoint() throws -> P256K.KeyAgreement.PublicKey {
 /// Multiply a point by a scalar (private key): scalar * point
 /// This implements k * P where k is a private key and P is a point
 public func multiplyPoint(_ point: P256K.KeyAgreement.PublicKey, by scalar: P256K.KeyAgreement.PrivateKey) throws -> P256K.KeyAgreement.PublicKey {
-    // Convert to Signing keys to use the tweak multiply functionality
-    let signingPoint = try P256K.Signing.PublicKey(dataRepresentation: point.dataRepresentation, format: .compressed)
-    let signingScalar = try P256K.Signing.PrivateKey(dataRepresentation: scalar.rawRepresentation)
-    
-    // Use the tweak multiply functionality: point * scalar
-    let resultSigningPoint = try signingPoint.multiply(signingScalar.dataRepresentation.bytes, format: .compressed)
-    
-    // Convert back to KeyAgreement key
-    return try P256K.KeyAgreement.PublicKey(dataRepresentation: resultSigningPoint.dataRepresentation, format: .compressed)
+    try CryptoLock.shared.withLock {
+        // Convert to Signing keys to use the tweak multiply functionality
+        let signingPoint = try P256K.Signing.PublicKey(dataRepresentation: point.dataRepresentation, format: .compressed)
+        let signingScalar = try P256K.Signing.PrivateKey(dataRepresentation: scalar.rawRepresentation)
+
+        // Use the tweak multiply functionality: point * scalar
+        let resultSigningPoint = try signingPoint.multiply(signingScalar.dataRepresentation.bytes, format: .compressed)
+
+        // Convert back to KeyAgreement key
+        return try P256K.KeyAgreement.PublicKey(dataRepresentation: resultSigningPoint.dataRepresentation, format: .compressed)
+    }
 }
 
 // MARK: - Point Addition
 
 /// Add two points on the secp256k1 curve
 public func addPoints(_ point1: P256K.KeyAgreement.PublicKey, _ point2: P256K.KeyAgreement.PublicKey) throws -> P256K.KeyAgreement.PublicKey {
-    // Convert to Signing keys to use the combine functionality
-    let signingPoint1 = try P256K.Signing.PublicKey(dataRepresentation: point1.dataRepresentation, format: .compressed)
-    let signingPoint2 = try P256K.Signing.PublicKey(dataRepresentation: point2.dataRepresentation, format: .compressed)
-    
-    // Use the combine functionality to add points
-    let resultSigningPoint = try signingPoint1.combine([signingPoint2], format: .compressed)
-    
-    // Convert back to KeyAgreement key
-    return try P256K.KeyAgreement.PublicKey(dataRepresentation: resultSigningPoint.dataRepresentation, format: .compressed)
+    try CryptoLock.shared.withLock {
+        // Convert to Signing keys to use the combine functionality
+        let signingPoint1 = try P256K.Signing.PublicKey(dataRepresentation: point1.dataRepresentation, format: .compressed)
+        let signingPoint2 = try P256K.Signing.PublicKey(dataRepresentation: point2.dataRepresentation, format: .compressed)
+
+        // Use the combine functionality to add points
+        let resultSigningPoint = try signingPoint1.combine([signingPoint2], format: .compressed)
+
+        // Convert back to KeyAgreement key
+        return try P256K.KeyAgreement.PublicKey(dataRepresentation: resultSigningPoint.dataRepresentation, format: .compressed)
+    }
 }
 
 /// Subtract two points on the secp256k1 curve (point1 - point2)
@@ -154,15 +164,19 @@ public struct MintKeypair {
     public let privateKey: P256K.KeyAgreement.PrivateKey
     /// K: public key corresponding to k (K = k*G)
     public let publicKey: P256K.KeyAgreement.PublicKey
-    
+
     public init() throws {
-        self.privateKey = try P256K.KeyAgreement.PrivateKey()
-        self.publicKey = privateKey.publicKey
+        (self.privateKey, self.publicKey) = try CryptoLock.shared.withLock {
+            let pk = try P256K.KeyAgreement.PrivateKey()
+            return (pk, pk.publicKey)
+        }
     }
-    
-    public init(privateKey: P256K.KeyAgreement.PrivateKey) throws {
+
+    public init(privateKey: P256K.KeyAgreement.PrivateKey) {
         self.privateKey = privateKey
-        self.publicKey = privateKey.publicKey
+        self.publicKey = CryptoLock.shared.withLock {
+            privateKey.publicKey
+        }
     }
 }
 

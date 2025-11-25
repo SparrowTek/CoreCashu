@@ -10,7 +10,7 @@ import Testing
 import Foundation
 import P256K
 
-@Suite("NUT-13 Tests")
+@Suite("NUT-13 Tests", .serialized)
 struct NUT13Tests {
     
     @Test("BIP39 mnemonic generation")

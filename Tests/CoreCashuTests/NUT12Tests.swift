@@ -10,6 +10,7 @@ import Foundation
 @testable import CoreCashu
 @preconcurrency import P256K
 
+@Suite(.serialized)
 struct NUT12Tests {
     
     @Test("DLEQ proof generation and verification")
@@ -202,14 +203,14 @@ struct NUT12Tests {
             r: blindingData.blindingFactor.rawRepresentation.hexString
         )
         
-        let proofForCarol = Proof(
+        _ = Proof(
             amount: 100,
             id: "test_id",
             secret: secret,
             C: unblindedToken.signature.hexString,
             dleq: dleqProofForCarol
         )
-        
+
         // Step 6: Carol verifies DLEQ proof
         let signaturePoint = try P256K.KeyAgreement.PublicKey(dataRepresentation: unblindedToken.signature, format: .compressed)
         let carolVerification = try verifyDLEQProofCarol(

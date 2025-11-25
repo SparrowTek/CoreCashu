@@ -2,7 +2,7 @@ import Testing
 @testable import CoreCashu
 import Foundation
 
-@Suite("Networking policy")
+@Suite("Networking policy", .serialized)
 struct NetworkingPolicyTests {
 
     @Test("Retry policy waits for retryable status code")

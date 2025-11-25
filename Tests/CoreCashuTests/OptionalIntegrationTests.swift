@@ -2,7 +2,7 @@ import Testing
 @testable import CoreCashu
 import Foundation
 
-@Suite("Optional Live Integration Tests")
+@Suite("Optional Live Integration Tests", .serialized)
 struct OptionalIntegrationTests {
 
     // Runs only if CASHUKIT_TEST_MINT is set (e.g., https://mint.example.com)

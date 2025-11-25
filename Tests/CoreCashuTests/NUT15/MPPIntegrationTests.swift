@@ -9,7 +9,7 @@ import Testing
 @testable import CoreCashu
 import Foundation
 
-@Suite("MPP API Integration Tests")
+@Suite("MPP API Integration Tests", .serialized)
 struct MPPIntegrationTests {
     
     @Test("MeltService MPP quote request structure")

@@ -9,7 +9,7 @@ import Testing
 @testable import CoreCashu
 import Foundation
 
-@Suite("MPP Implementation Tests")
+@Suite("MPP Implementation Tests", .serialized)
 struct MPPTests {
     
     @Test("Payment path optimizer - minimize mints strategy")

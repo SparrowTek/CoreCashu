@@ -2,7 +2,7 @@ import Testing
 @testable import CoreCashu
 import Foundation
 
-@Suite("Integration Tests")
+@Suite("Integration Tests", .serialized)
 struct IntegrationTests {
     
     // MARK: - Test Configuration

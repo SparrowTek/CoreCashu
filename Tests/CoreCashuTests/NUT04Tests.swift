@@ -9,7 +9,7 @@ import Foundation
 import Testing
 @testable import CoreCashu
 
-@Suite("NUT 04 Tests")
+@Suite("NUT 04 Tests", .serialized)
 struct NUT04Tests {
     
     // MARK: - Data Structure Tests

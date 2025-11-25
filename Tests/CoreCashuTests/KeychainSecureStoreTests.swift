@@ -3,7 +3,7 @@ import Testing
 @testable import CoreCashu
 import Foundation
 
-@Suite("KeychainSecureStore")
+@Suite("KeychainSecureStore", .serialized)
 struct KeychainSecureStoreTests {
     private func uniqueConfiguration(label: String = UUID().uuidString) -> KeychainSecureStore.Configuration {
         KeychainSecureStore.Configuration(

@@ -42,7 +42,7 @@ actor MetricCapture {
     }
 }
 
-@Suite("Metrics System Tests")
+@Suite("Metrics System Tests", .serialized)
 struct MetricsTests {
 
     // MARK: - Enhanced Metrics Client Tests
@@ -100,7 +100,7 @@ struct MetricsTests {
     func testMetricTimer() async {
         let client = EnhancedMetricsClient(enabled: true)
 
-        let timer = await client.startTimer()
+        let timer = client.startTimer()
         // Simulate some work
         try? await Task.sleep(nanoseconds: 10_000_000) // 10ms
         await timer.stop(metricName: "operation.duration", tags: [:])
@@ -323,21 +323,21 @@ struct MetricsTests {
 
         // Simulate wallet initialization
         await metricsClient.increment(CashuMetrics.walletInitializeStart)
-        let initTimer = await metricsClient.startTimer()
+        let initTimer = metricsClient.startTimer()
         try? await Task.sleep(nanoseconds: 50_000_000) // 50ms
         await initTimer.stop(metricName: CashuMetrics.walletInitializeDuration, tags: [:])
         await metricsClient.increment(CashuMetrics.walletInitializeSuccess)
 
         // Simulate mint operation
         await metricsClient.increment(CashuMetrics.mintStart)
-        let mintTimer = await metricsClient.startTimer()
+        let mintTimer = metricsClient.startTimer()
         try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
         await mintTimer.stop(metricName: CashuMetrics.mintDuration, tags: [:])
         await metricsClient.increment(CashuMetrics.mintSuccess)
 
         // Simulate melt operation
         await metricsClient.increment(CashuMetrics.meltStart)
-        let meltTimer = await metricsClient.startTimer()
+        let meltTimer = metricsClient.startTimer()
         try? await Task.sleep(nanoseconds: 150_000_000) // 150ms
         await meltTimer.stop(metricName: CashuMetrics.meltDuration, tags: [:])
         await metricsClient.increment(CashuMetrics.meltFinalized)

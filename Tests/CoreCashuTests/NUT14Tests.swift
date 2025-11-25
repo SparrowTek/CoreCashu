@@ -11,7 +11,7 @@ import Foundation
 import CryptoKit
 import P256K
 
-@Suite("NUT-14 Tests")
+@Suite("NUT-14 Tests", .serialized)
 struct NUT14Tests {
     
     @Test("HTLC preimage generation and verification")

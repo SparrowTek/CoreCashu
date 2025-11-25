@@ -8,7 +8,7 @@
 import Testing
 @testable import CoreCashu
 
-@Suite("NUT03 tests")
+@Suite("NUT03 tests", .serialized)
 struct NUT03Tests {
     
     // MARK: - PostSwapRequest Tests

@@ -24,7 +24,7 @@ private actor StateChangeRecorder {
     }
 }
 
-@Suite("State Management Tests")
+@Suite("State Management Tests", .serialized)
 struct StateManagementTests {
     
     // MARK: - Wallet State Machine Tests

@@ -2,7 +2,7 @@ import Testing
 @testable import CoreCashu
 import Foundation
 
-@Suite("Cashu Wallet Tests")
+@Suite("Cashu Wallet Tests", .serialized)
 struct CashuWalletTests {
     
     // MARK: - Wallet Initialization Tests

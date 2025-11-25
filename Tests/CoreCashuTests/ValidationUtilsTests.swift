@@ -2,7 +2,7 @@ import Testing
 @testable import CoreCashu
 import Foundation
 
-@Suite("Validation Utils")
+@Suite("Validation Utils", .serialized)
 struct ValidationUtilsTests {
     
     // MARK: - Amount Validation Tests

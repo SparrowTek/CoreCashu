@@ -9,7 +9,7 @@ import Testing
 @testable import CoreCashu
 import Foundation
 
-@Suite("NUT-15 Tests")
+@Suite("NUT-15 Tests", .serialized)
 struct NUT15Tests {
     
     @Test("MPP options serialization")

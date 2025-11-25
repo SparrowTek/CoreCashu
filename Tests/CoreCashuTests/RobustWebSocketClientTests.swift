@@ -2,7 +2,7 @@ import Testing
 import Foundation
 @testable import CoreCashu
 
-@Suite("Robust WebSocket Client Tests")
+@Suite("Robust WebSocket Client Tests", .serialized)
 struct RobustWebSocketClientTests {
 
     @Test("Basic connection and disconnection")

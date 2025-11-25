@@ -9,7 +9,7 @@ import Testing
 @testable import CoreCashu
 import Foundation
 
-@Suite("NUT-17 Tests")
+@Suite("NUT-17 Tests", .serialized)
 struct NUT17Tests {
     
     @Test("JSON-RPC types")

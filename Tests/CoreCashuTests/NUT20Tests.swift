@@ -11,7 +11,7 @@ import Foundation
 import P256K
 import CryptoKit
 
-@Suite("NUT-20 Tests")
+@Suite("NUT-20 Tests", .serialized)
 struct NUT20Tests {
     
     // MARK: - Message Aggregation Tests

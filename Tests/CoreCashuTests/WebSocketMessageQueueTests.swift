@@ -2,7 +2,7 @@ import Testing
 import Foundation
 @testable import CoreCashu
 
-@Suite("WebSocket Message Queue Tests")
+@Suite("WebSocket Message Queue Tests", .serialized)
 struct WebSocketMessageQueueTests {
 
     @Test("Basic enqueue and dequeue")

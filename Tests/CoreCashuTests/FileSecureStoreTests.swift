@@ -3,7 +3,7 @@ import Testing
 @testable import CoreCashu
 import Foundation
 
-@Suite("FileSecureStore")
+@Suite("FileSecureStore", .serialized)
 struct FileSecureStoreTests {
 
     @Test("Mnemonic and seed persistence")

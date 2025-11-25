@@ -2,7 +2,7 @@ import Testing
 @testable import CoreCashu
 import Foundation
 
-@Suite("Token Serialization Fuzz Tests")
+@Suite("Token Serialization Fuzz Tests", .serialized)
 struct TokenSerializationFuzzTests {
 
     // MARK: - Fuzz Test Generators

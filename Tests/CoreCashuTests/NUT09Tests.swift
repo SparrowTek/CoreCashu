@@ -9,7 +9,7 @@ import Testing
 import Foundation
 @testable import CoreCashu
 
-@Suite("NUT09 tests")
+@Suite("NUT09 tests", .serialized)
 struct NUT09Tests {
     
     // MARK: - PostRestoreRequest Tests

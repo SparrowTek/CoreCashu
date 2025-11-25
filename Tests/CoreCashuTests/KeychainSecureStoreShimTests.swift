@@ -3,7 +3,7 @@ import Testing
 @testable import CoreCashu
 import Foundation
 
-@Suite("KeychainSecureStore (Testing Shim)")
+@Suite("KeychainSecureStore (Testing Shim)", .serialized)
 struct KeychainSecureStoreShimTests {
 
     @Test("Mnemonic lifecycle on shim")

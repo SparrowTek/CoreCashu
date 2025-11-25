@@ -9,7 +9,7 @@ import Testing
 @testable import CoreCashu
 import Foundation
 
-@Suite("NUT-24: HTTP 402 Payment Required Tests")
+@Suite("NUT-24: HTTP 402 Payment Required Tests", .serialized)
 struct NUT24Tests {
     
     // MARK: - Payment Request Tests

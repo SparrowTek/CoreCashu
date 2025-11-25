@@ -10,7 +10,7 @@ import Foundation
 import P256K
 @testable import CoreCashu
 
-@Suite("NUT00 tests")
+@Suite("NUT00 tests", .serialized)
 struct NUT00Tests {
     
     @Test

@@ -18,7 +18,7 @@ private actor MockNetworkService: NetworkService {
     }
 }
 
-@Suite("NUT-22 Token Metadata Tests")
+@Suite("NUT-22 Token Metadata Tests", .serialized)
 struct NUT22Tests {
     
     // MARK: - AccessToken Tests

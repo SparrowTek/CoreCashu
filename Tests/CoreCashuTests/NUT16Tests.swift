@@ -9,7 +9,7 @@ import Testing
 @testable import CoreCashu
 import Foundation
 
-@Suite("NUT-16 Tests")
+@Suite("NUT-16 Tests", .serialized)
 struct NUT16Tests {
     
     // Helper function to create test tokens

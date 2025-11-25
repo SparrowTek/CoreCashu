@@ -4,7 +4,7 @@ import Foundation
 
 /// Tests to ensure parity with the Rust CDK implementation
 /// These tests verify that our Swift implementation behaves identically to cashubtc/cdk
-@Suite("Rust Implementation Parity Tests")
+@Suite("Rust Implementation Parity Tests", .serialized)
 struct RustParityTests {
 
     // MARK: - Token Format Parity
@@ -34,8 +34,17 @@ struct RustParityTests {
         // Should start with "cashuA" for v3 tokens
         #expect(serialized.hasPrefix("cashuA"), "Token doesn't start with cashuA prefix")
 
-        // Should be valid base64
-        let base64Part = String(serialized.dropFirst(6))
+        // Should be valid base64 (URL-safe encoded)
+        var base64Part = String(serialized.dropFirst(6))
+        // Convert URL-safe base64 back to standard base64
+        base64Part = base64Part
+            .replacingOccurrences(of: "_", with: "/")
+            .replacingOccurrences(of: "-", with: "+")
+        // Add padding if needed
+        let remainder = base64Part.count % 4
+        if remainder > 0 {
+            base64Part += String(repeating: "=", count: 4 - remainder)
+        }
         guard let decoded = Data(base64Encoded: base64Part) else {
             Issue.record("Token is not valid base64")
             return
@@ -82,7 +91,8 @@ struct RustParityTests {
         // CDK uses specific algorithm for keyset ID calculation
         // Keyset ID = first 16 hex chars of SHA256(sorted_keys)
 
-        let testKeys = [
+        // Example test keys that CDK would use for keyset ID calculation
+        _ = [
             1: "02a9acc1e48c25e210fc7e00ee7133e01d10ca3096028217e8de0caa7cd0073949",
             2: "0388094be3173c6c3c8d9800ed96aab3b90343e06b310fd183ad14d70bf32e2b18",
             4: "0365408b7c66c0a0056e322e32a32d3551d7fa47df3bf75e6b627e1dc0dc1c3569"
@@ -241,8 +251,9 @@ struct RustParityTests {
         // Test that our BDHKE implementation matches CDK
         // This requires actual cryptographic operations
 
-        let testMessage = "test_message"
-        let testBlindingFactor = Data(repeating: 0x01, count: 32)
+        // Example test values (used for documentation, actual tests use real BDHKE)
+        _ = "test_message"
+        _ = Data(repeating: 0x01, count: 32)
 
         // In real implementation:
         // 1. Blind the message with our implementation
@@ -252,7 +263,7 @@ struct RustParityTests {
         // For now, just test that operations don't crash
         // Real tests would need the actual BDHKE implementation
 
-        #expect(true, "BDHKE operations test placeholder")
+        #expect(Bool(true), "BDHKE operations test placeholder")
     }
 
     // MARK: - Network Protocol Parity

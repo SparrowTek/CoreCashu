@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import CoreCashu
 
-@Suite("SecureRandom overrides")
+@Suite("SecureRandom overrides", .serialized)
 struct SecureRandomTests {
     @Test
     func defaultGeneratorProducesRequestedLength() throws {

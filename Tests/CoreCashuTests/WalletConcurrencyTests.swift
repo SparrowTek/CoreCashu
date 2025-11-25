@@ -2,7 +2,7 @@ import Testing
 @testable import CoreCashu
 import Foundation
 
-@Suite("Wallet Concurrency Tests")
+@Suite("Wallet Concurrency Tests", .serialized)
 struct WalletConcurrencyTests {
     
     @Test("Concurrent wallet initialization")

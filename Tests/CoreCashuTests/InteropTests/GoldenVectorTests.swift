@@ -4,7 +4,7 @@ import Foundation
 
 /// Golden vectors from the cashubtc/cdk Rust implementation
 /// These ensure interoperability between different Cashu implementations
-@Suite("Golden Vector Interoperability Tests")
+@Suite("Golden Vector Interoperability Tests", .serialized)
 struct GoldenVectorTests {
 
     // MARK: - Token Vectors from CDK
@@ -208,8 +208,8 @@ struct GoldenVectorTests {
 
             // Compare normalized JSON (order might differ)
             let vectorData = vector.expectedJSON.data(using: .utf8)!
-            let vectorJSON = try JSONSerialization.jsonObject(with: vectorData)
-            let encodedJSON = try JSONSerialization.jsonObject(with: encoded)
+            _ = try JSONSerialization.jsonObject(with: vectorData)
+            _ = try JSONSerialization.jsonObject(with: encoded)
 
             // Simple comparison - in real tests would need deep comparison
             print("Generated: \(jsonString)")

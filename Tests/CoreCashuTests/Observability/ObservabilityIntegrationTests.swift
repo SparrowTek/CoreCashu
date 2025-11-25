@@ -2,7 +2,7 @@ import Testing
 @testable import CoreCashu
 import Foundation
 
-@Suite("Observability Integration Tests")
+@Suite("Observability Integration Tests", .serialized)
 struct ObservabilityIntegrationTests {
 
     @Test("Complete observability stack integration")
@@ -45,7 +45,7 @@ struct ObservabilityIntegrationTests {
         ])
 
         await metricsClient.increment(CashuMetrics.walletInitializeStart)
-        let initTimer = await metricsClient.startTimer()
+        let initTimer = metricsClient.startTimer()
 
         // Simulate some initialization work
         try? await Task.sleep(nanoseconds: 10_000_000) // 10ms
@@ -70,7 +70,7 @@ struct ObservabilityIntegrationTests {
         await metricsClient.increment(CashuMetrics.mintStart)
         await metricsClient.gauge("wallet.balance", value: 1000, tags: ["currency": "sat"])
 
-        let mintTimer = await metricsClient.startTimer()
+        let mintTimer = metricsClient.startTimer()
         try? await Task.sleep(nanoseconds: 20_000_000) // 20ms
 
         await mintTimer.stop(metricName: CashuMetrics.mintDuration, tags: ["status": "success"])
@@ -154,7 +154,7 @@ struct ObservabilityIntegrationTests {
                     // Metrics operations
                     await metricsClient.increment("task.started", tags: ["task_id": String(i)])
 
-                    let timer = await metricsClient.startTimer()
+                    let timer = metricsClient.startTimer()
                     try? await Task.sleep(nanoseconds: UInt64.random(in: 1_000_000...10_000_000))
                     await timer.stop(metricName: "task.duration", tags: ["task_id": String(i)])
 
@@ -167,7 +167,7 @@ struct ObservabilityIntegrationTests {
         }
 
         // No crashes or data races = test passed
-        #expect(true)
+        #expect(Bool(true))
     }
 
     @Test("Export format compatibility")

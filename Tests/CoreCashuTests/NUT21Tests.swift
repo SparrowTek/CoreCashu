@@ -17,7 +17,7 @@ private actor MockNetworkService: Networking {
     }
 }
 
-@Suite("NUT-21 Clear Authentication Tests")
+@Suite("NUT-21 Clear Authentication Tests", .serialized)
 struct NUT21Tests {
     
     // MARK: - ProtectedEndpoint Tests

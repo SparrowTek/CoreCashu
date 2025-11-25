@@ -23,7 +23,7 @@ actor LogCapture {
     }
 }
 
-@Suite("Logging System Tests")
+@Suite("Logging System Tests", .serialized)
 struct LoggingTests {
 
     // MARK: - Secret Redaction Tests

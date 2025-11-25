@@ -2,7 +2,7 @@ import Testing
 @testable import CoreCashu
 import Foundation
 
-@Suite("Token Utils")
+@Suite("Token Utils", .serialized)
 struct TokenUtilsTests {
     
     // MARK: - Token Serialization Tests

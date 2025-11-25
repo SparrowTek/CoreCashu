@@ -9,7 +9,7 @@ import Testing
 @testable import CoreCashu
 import Foundation
 
-@Suite("NUT-19 Tests")
+@Suite("NUT-19 Tests", .serialized)
 struct NUT19Tests {
     
     // MARK: - Cached Endpoint Tests

@@ -1,3 +1,7 @@
+@_exported import P256K
+@_exported import CryptoSwift
+@_exported import BigInt
+
 @CashuActor
 public struct CoreCashu {
     public static func setup(baseURL: String) {

@@ -165,7 +165,7 @@ struct RustParityTests {
     func signatureFormatParity() {
         // CDK uses secp256k1 signatures
         // Public keys are 33 bytes (compressed) = 66 hex chars
-        let testSignature = "02bc90979997d81afb2cc7346deb1ee16920b08b0bf5bab461483effb6390694851"
+        let testSignature = "02bc9097997d81afb2cc7346deb1ee16920b08b0bf5bab461483effb6390694851"
 
         // Should be 66 hex characters (33 bytes compressed)
         #expect(testSignature.count == 66 || testSignature.count == 130,

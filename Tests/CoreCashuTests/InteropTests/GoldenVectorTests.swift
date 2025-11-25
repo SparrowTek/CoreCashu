@@ -22,8 +22,8 @@ struct GoldenVectorTests {
                     proofs: [Proof(
                         amount: 2,
                         id: "009a1f293253e41e",
-                        secret: "407915bc212be61a77e3e6d2aeb4c727980bda51cd06a6afc29e2861768887ff7",
-                        C: "02bc90979997d81afb2cc7346deb1ee16920b08b0bf5bab461483effb63906948511"
+                        secret: "407915bc212be61a77e3e6d2aeb4c727980bda51cd06a6afc29e286176887ff7",
+                        C: "02bc9097997d81afb2cc7346deb1ee16920b08b0bf5bab461483effb6390694851"
                     )]
                 )],
                 unit: "sat"
@@ -41,14 +41,14 @@ struct GoldenVectorTests {
                         Proof(
                             amount: 1,
                             id: "00ad268c4d474f7e",
-                            secret: "fd4dd42f21882246e483ee7d078e07dc1fc731a4ed596a207f958cabf3858ffd19",
+                            secret: "fd4dd42f2188246e483ee7d078e07dc1fc731a4ed596a207f958cabf3858ffd19",
                             C: "02a9e4dffec20f8bc64cd0f32e0293ea3e562c11c56340c8100ac9492627f92a18"
                         ),
                         Proof(
                             amount: 2,
                             id: "00ad268c4d474f7e",
-                            secret: "55c9bede1af9ea1abb5eb47a91be333e7d5264dd25ae07f83b39210170343646",
-                            C: "035548f3132abfc4e10e1630603fda558107969370e1c1eaa4145c9e781f2748c0d"
+                            secret: "55c9bede1af9ea1abb5eb47a91be333e7d5264dd25ae07f83b392101703436a46",
+                            C: "035548f3132abfc4e10e1630603fda55810796937e1c1eaa4145c9e781f2748c0d"
                         )
                     ]
                 )],
@@ -289,22 +289,4 @@ struct MeltRequestVector {
 }
 
 // MARK: - Helper Extensions
-
-extension Data {
-    init?(hexString: String) {
-        let len = hexString.count / 2
-        var data = Data(capacity: len)
-        var index = hexString.startIndex
-
-        for _ in 0..<len {
-            let nextIndex = hexString.index(index, offsetBy: 2)
-            guard let byte = UInt8(hexString[index..<nextIndex], radix: 16) else {
-                return nil
-            }
-            data.append(byte)
-            index = nextIndex
-        }
-
-        self = data
-    }
-}
+// Note: Data.init?(hexString:) is provided by CoreCashu

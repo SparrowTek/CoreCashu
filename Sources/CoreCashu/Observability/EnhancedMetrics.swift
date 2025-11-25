@@ -294,7 +294,8 @@ import Foundation
 
     private func metricKey(name: String, tags: [String: String]?) -> String {
         var key = name
-        if let tags = tags {
+        // Treat nil and empty tags the same (no suffix)
+        if let tags = tags, !tags.isEmpty {
             let sortedTags = tags.sorted { $0.key < $1.key }
             let tagString = sortedTags.map { "\($0.key)=\($0.value)" }.joined(separator: ",")
             key += "{\(tagString)}"

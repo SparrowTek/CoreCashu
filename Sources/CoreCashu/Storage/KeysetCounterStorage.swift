@@ -72,7 +72,8 @@ public final class UserDefaultsKeysetCounterStorage: KeysetCounterStorage, Senda
             return nil
         }
         let value = userDefaults.integer(forKey: key)
-        return UInt32(value)
+        // Handle potential negative values safely
+        return value >= 0 ? UInt32(value) : 0
     }
     
     public func setCounter(for keysetID: String, value: UInt32) async throws {

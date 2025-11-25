@@ -1329,7 +1329,9 @@ public actor CashuWallet {
             }
             
             // Update counter for this keyset
-            let finalCounter = currentCounter - UInt32(3 * batchSize) + UInt32(totalProofsFound)
+            // Use safe arithmetic to prevent underflow
+            let batchAdjustment = min(currentCounter, UInt32(3 * batchSize))
+            let finalCounter = currentCounter - batchAdjustment + UInt32(totalProofsFound)
             await keysetCounterManager.setCounter(for: keysetID, value: finalCounter + 1)
             
             // Counters are managed in-memory

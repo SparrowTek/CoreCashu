@@ -266,12 +266,19 @@ struct TokenPropertyTests {
 
     /// Generate valid tokens for testing
     func generateValidTokens(count: Int) -> [CashuToken] {
+        // Valid keyset IDs are 16 hex characters (8 bytes)
+        let validKeysetIds = [
+            "009a1f293253e41e",
+            "00ad268c4d474f7e",
+            "00b5c6e3d9a81234"
+        ]
+
         return (0..<count).map { i in
             let proofCount = Int.random(in: 1...10)
             let proofs = (0..<proofCount).map { j in
                 Proof(
                     amount: Int.random(in: 1...100),
-                    id: "keyset-\(i % 3)",
+                    id: validKeysetIds[i % 3],
                     secret: "secret-\(i)-\(j)",
                     C: String(format: "%064x", i * 1000 + j)
                 )

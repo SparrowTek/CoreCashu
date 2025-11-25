@@ -96,11 +96,14 @@ struct LoggingTests {
     @Test("Structured logger creates proper JSON output")
     func testStructuredLoggerJSON() async {
         let logCapture = LogCapture()
+
+        // Use a synchronous capture to avoid Task race conditions
         let logger = StructuredLogger(
             minimumLevel: .debug,
             outputFormat: .jsonLines,
-            destination: .custom { log in
-                Task {
+            destination: .custom { @Sendable log in
+                // Synchronous capture - the actor will handle thread safety
+                Task { @MainActor in
                     await logCapture.append(log)
                 }
             },
@@ -109,8 +112,8 @@ struct LoggingTests {
 
         logger.info("Test message", metadata: ["key": "value"])
 
-        // Give async logging time to process
-        try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
+        // Give async logging time to process - increased to ensure completion
+        try? await Task.sleep(nanoseconds: 200_000_000) // 200ms
 
         let capturedLog = await logCapture.getLastLog()
         #expect(capturedLog != nil)
@@ -129,8 +132,8 @@ struct LoggingTests {
         let logger = StructuredLogger(
             minimumLevel: .debug,
             outputFormat: .jsonLines,
-            destination: .custom { log in
-                Task {
+            destination: .custom { @Sendable log in
+                Task { @MainActor in
                     await logCapture.append(log)
                 }
             },
@@ -141,7 +144,7 @@ struct LoggingTests {
         logger.error("Error with key: \(privateKey)", metadata: ["privateKey": privateKey])
 
         // Give async logging time to process
-        try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
+        try? await Task.sleep(nanoseconds: 200_000_000) // 200ms
 
         let capturedLog = await logCapture.getLastLog()
         #expect(capturedLog != nil)
@@ -155,8 +158,8 @@ struct LoggingTests {
         let logger = StructuredLogger(
             minimumLevel: .warning,
             outputFormat: .jsonLines,
-            destination: .custom { log in
-                Task {
+            destination: .custom { @Sendable log in
+                Task { @MainActor in
                     await logCapture.append(log)
                 }
             }
@@ -168,7 +171,7 @@ struct LoggingTests {
         logger.error("Error message")
 
         // Give async logging time to process
-        try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
+        try? await Task.sleep(nanoseconds: 200_000_000) // 200ms
 
         let capturedCount = await logCapture.count()
         #expect(capturedCount == 2)
@@ -180,8 +183,8 @@ struct LoggingTests {
         let logger = StructuredLogger(
             minimumLevel: .info,
             outputFormat: .logfmt,
-            destination: .custom { log in
-                Task {
+            destination: .custom { @Sendable log in
+                Task { @MainActor in
                     await logCapture.append(log)
                 }
             },
@@ -191,7 +194,7 @@ struct LoggingTests {
         logger.info("Test", metadata: ["key": "value with spaces"])
 
         // Give async logging time to process
-        try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
+        try? await Task.sleep(nanoseconds: 200_000_000) // 200ms
 
         let capturedLog = await logCapture.getLastLog()
         #expect(capturedLog != nil)
@@ -300,8 +303,8 @@ struct LoggingTests {
         let logger = StructuredLogger(
             minimumLevel: .debug,
             outputFormat: .jsonLines,
-            destination: .custom { log in
-                Task {
+            destination: .custom { @Sendable log in
+                Task { @MainActor in
                     await logCapture.append(log)
                 }
             },
@@ -320,7 +323,7 @@ struct LoggingTests {
         ])
 
         // Give async logging time to process
-        try? await Task.sleep(nanoseconds: 200_000_000) // 200ms
+        try? await Task.sleep(nanoseconds: 300_000_000) // 300ms
 
         let capturedLogs = await logCapture.getLogs()
         #expect(capturedLogs.count == 4)

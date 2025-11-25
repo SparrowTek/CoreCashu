@@ -56,24 +56,54 @@ public actor SimpleCache<Key: Hashable & Sendable, Value: Sendable> {
 // MARK: - Optimized Crypto Operations
 
 /// Optimized cryptographic operations
-public struct OptimizedCrypto {
-    /// Cached hash-to-curve operations
-    private static let hashToCurveCache = SimpleCache<String, P256K.KeyAgreement.PublicKey>(
-        maxSize: 10000,
-        ttl: 3600 // 1 hour
-    )
-    
+public struct OptimizedCrypto: Sendable {
+    /// Actor-isolated cache for hash-to-curve operations
+    private actor HashToCurveCache {
+        private var storage: [String: (value: Data, lastAccess: Date)] = [:]
+        private let maxSize: Int = 10000
+        private let ttl: TimeInterval = 3600 // 1 hour
+
+        func get(_ key: String) -> Data? {
+            guard let entry = storage[key] else { return nil }
+
+            // Check TTL
+            if Date().timeIntervalSince(entry.lastAccess) > ttl {
+                storage.removeValue(forKey: key)
+                return nil
+            }
+
+            // Update last access
+            storage[key] = (value: entry.value, lastAccess: Date())
+            return entry.value
+        }
+
+        func set(_ key: String, value: Data) {
+            storage[key] = (value: value, lastAccess: Date())
+
+            // Evict if needed
+            if storage.count > maxSize {
+                if let oldestKey = storage.min(by: { $0.value.lastAccess < $1.value.lastAccess })?.key {
+                    storage.removeValue(forKey: oldestKey)
+                }
+            }
+        }
+    }
+
+    /// Cached hash-to-curve operations (stores raw bytes for Sendable compliance)
+    private static let hashToCurveCache = HashToCurveCache()
+
     /// Hash to curve with caching
     public static func cachedHashToCurve(_ data: Data) async throws -> P256K.KeyAgreement.PublicKey {
         let key = data.hexString
-        
-        if let cached = await hashToCurveCache.get(key) {
-            return cached
+
+        if let cachedData = await hashToCurveCache.get(key) {
+            return try P256K.KeyAgreement.PublicKey(dataRepresentation: cachedData, format: .compressed)
         }
-        
+
         let result = try hashToCurve(data)
-        await hashToCurveCache.set(key, value: result)
-        
+        let resultData = result.dataRepresentation
+        await hashToCurveCache.set(key, value: resultData)
+
         return result
     }
     
@@ -192,11 +222,13 @@ public struct PerformanceMonitor {
 
 // MARK: - Performance Manager
 
-public struct PerformanceManager: Sendable {
+/// Performance manager using actors for thread-safe caching
+/// Note: This is an actor rather than struct to properly handle actor-isolated properties
+public actor PerformanceManager {
     public let proofStorage: OptimizedProofStorage
-    public let mintInfoCache: SimpleCache<String, MintInfo>
-    public let keysetCache: SimpleCache<String, Keyset>
-    
+    private let mintInfoCache: SimpleCache<String, MintInfo>
+    private let keysetCache: SimpleCache<String, Keyset>
+
     public init(
         maxMintInfoCacheSize: Int = 100,
         mintInfoCacheTTL: TimeInterval = 3600,
@@ -212,6 +244,22 @@ public struct PerformanceManager: Sendable {
             maxSize: maxKeysetCacheSize,
             ttl: keysetCacheTTL
         )
+    }
+
+    public func getCachedMintInfo(_ key: String) async -> MintInfo? {
+        await mintInfoCache.get(key)
+    }
+
+    public func setCachedMintInfo(_ key: String, value: MintInfo) async {
+        await mintInfoCache.set(key, value: value)
+    }
+
+    public func getCachedKeyset(_ key: String) async -> Keyset? {
+        await keysetCache.get(key)
+    }
+
+    public func setCachedKeyset(_ key: String, value: Keyset) async {
+        await keysetCache.set(key, value: value)
     }
 }
 

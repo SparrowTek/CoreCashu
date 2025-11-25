@@ -28,7 +28,7 @@ public protocol MetricsClient: Sendable {
 
     /// Start a timer for measuring duration
     /// - Returns: A timer instance that can be stopped to record the duration
-    func startTimer() -> MetricTimer
+    func startTimer() -> any MetricTimer
 
     /// Record an event with optional metadata
     /// - Parameters:
@@ -119,7 +119,7 @@ public struct NoOpMetricsClient: MetricsClient {
         // No-op
     }
 
-    public func startTimer() -> MetricTimer {
+    public func startTimer() -> any MetricTimer {
         NoOpMetricTimer()
     }
 
@@ -178,12 +178,12 @@ public actor ConsoleMetricsClient: MetricsClient {
         print("[METRIC] \(timestamp()) TIMING \(name)=\(ms)ms\(tagsStr)")
     }
 
-    public nonisolated func startTimer() -> MetricTimer {
+    public nonisolated func startTimer() -> any MetricTimer {
         ConsoleMetricTimer(client: self)
     }
 
     public nonisolated func event(_ name: String, metadata: [String: Any]?) async {
-        guard await enabled else { return }
+        guard enabled else { return }
         let metaStr = metadata.map { " metadata=\($0)" } ?? ""
         print("[EVENT] \(await timestamp()) \(name)\(metaStr)")
     }

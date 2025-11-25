@@ -262,10 +262,28 @@ extension CashuToken {
 
 extension CashuWallet {
     /// Select proofs for a specific amount, unit, and mint
-    /// This is a placeholder - actual implementation would depend on wallet structure
+    /// - Parameters:
+    ///   - amount: The amount of tokens to select
+    ///   - unit: The currency unit (must match wallet's unit)
+    ///   - mint: The mint URL (must match wallet's mint)
+    /// - Returns: Array of selected proofs totaling at least the requested amount
+    /// - Throws: CashuError if wallet is not ready, mint doesn't match, or insufficient balance
     public func selectProofs(amount: Int, unit: String, mint: String) async throws -> [Proof] {
-        // This would need to be implemented based on the actual wallet structure
-        // For now, return empty array
-        return []
+        guard isReady else {
+            throw CashuError.walletNotInitialized
+        }
+
+        // Verify the mint matches this wallet's mint
+        guard mint == mintURL else {
+            throw CashuError.invalidMintConfiguration
+        }
+
+        // Verify the unit matches this wallet's unit
+        guard unit == self.unit else {
+            throw CashuError.invalidUnit
+        }
+
+        // Delegate to the wallet's internal proof selection
+        return try await selectProofsForAmount(amount)
     }
 }

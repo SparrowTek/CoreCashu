@@ -18,7 +18,7 @@ public final class OSLogger: LoggerProtocol, @unchecked Sendable {
     private let osLog: OSLog
 
     /// Secret redactor for sensitive information
-    private let redactor: SecretRedactor
+    private let redactor: any SecretRedactor
 
     /// Enable/disable secret redaction
     private let enableRedaction: Bool
@@ -28,7 +28,7 @@ public final class OSLogger: LoggerProtocol, @unchecked Sendable {
         category: String = "default",
         minimumLevel: LogLevel = .info,
         enableRedaction: Bool = true,
-        redactor: SecretRedactor? = nil
+        redactor: (any SecretRedactor)? = nil
     ) {
         self.subsystem = subsystem
         self.category = category

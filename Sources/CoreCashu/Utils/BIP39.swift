@@ -87,7 +87,7 @@ public enum BIP39 {
         // For Swift Package Manager resources
         #if canImport(Foundation)
         if let url = Bundle.module.url(forResource: "bip39-english", withExtension: "txt"),
-           let content = try? String(contentsOf: url) {
+           let content = try? String(contentsOf: url, encoding: .utf8) {
             let words = content.split(separator: "\n").map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
             if words.count == 2048 {
                 return words
@@ -103,7 +103,7 @@ public enum BIP39 {
         ]
         
         for path in paths {
-            if let content = try? String(contentsOfFile: path) {
+            if let content = try? String(contentsOfFile: path, encoding: .utf8) {
                 let words = content.split(separator: "\n").map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
                 if words.count == 2048 {
                     return words

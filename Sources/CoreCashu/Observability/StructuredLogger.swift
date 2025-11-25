@@ -24,7 +24,7 @@ public final class StructuredLogger: LoggerProtocol, @unchecked Sendable {
     private let outputFormat: OutputFormat
     private let destination: OutputDestination
     private let encoder: JSONEncoder
-    private let redactor: SecretRedactor
+    private let redactor: any SecretRedactor
     private let enableRedaction: Bool
     private let includeStackTrace: Bool
     private let applicationName: String
@@ -46,7 +46,7 @@ public final class StructuredLogger: LoggerProtocol, @unchecked Sendable {
         applicationName: String = "CoreCashu",
         environment: String? = nil,
         staticMetadata: [String: Any] = [:],
-        redactor: SecretRedactor? = nil
+        redactor: (any SecretRedactor)? = nil
     ) {
         self.minimumLevel = minimumLevel
         self.outputFormat = outputFormat

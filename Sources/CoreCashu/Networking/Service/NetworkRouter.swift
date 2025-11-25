@@ -70,7 +70,7 @@ internal class NetworkRouter<Endpoint: EndpointType>: NetworkRouterProtocol {
         guard var request = try? await buildRequest(from: route) else { throw NetworkError.encodingFailed }
 
         // Attempt loop with delegate retry and circuit breaker feedback
-        let maxAttempts = await delegate?.maxRetryAttempts ?? 1
+        let maxAttempts = delegate?.maxRetryAttempts ?? 1
         var attempts = 0
         var lastError: (any Error)?
         while attempts < maxAttempts {

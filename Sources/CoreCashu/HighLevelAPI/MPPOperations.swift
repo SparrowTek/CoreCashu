@@ -13,7 +13,7 @@ public extension CashuWallet {
     ///   - mints: Optional array of mint URLs to use (if nil, uses current mint)
     ///   - invoice: Optional Lightning invoice for coordinated payment
     /// - Returns: MPPSendResult containing all partial payments
-    public func sendMultiPath(
+    func sendMultiPath(
         amount: Int,
         splits: [Int]? = nil,
         mints: [String]? = nil,
@@ -79,7 +79,7 @@ public extension CashuWallet {
     ///   - tokens: Array of Cashu tokens to combine
     ///   - targetMint: Optional target mint for the combined payment
     /// - Returns: Combined token
-    public func combineMultiPath(
+    func combineMultiPath(
         tokens: [String],
         targetMint: String? = nil
     ) async throws -> String {
@@ -138,7 +138,7 @@ public extension CashuWallet {
     /// Receive a multi-path payment
     /// - Parameter tokens: Array of partial payment tokens
     /// - Returns: Total amount received
-    public func receiveMultiPath(tokens: [String]) async throws -> Int {
+    func receiveMultiPath(tokens: [String]) async throws -> Int {
         guard isReady else {
             throw CashuError.walletNotInitialized
         }
@@ -174,13 +174,25 @@ public extension CashuWallet {
     /// Check the status of a multi-path payment
     /// - Parameter paymentId: The MPP payment ID
     /// - Returns: Status information
-    public func checkMPPStatus(paymentId: String) async throws -> MPPStatus {
+    /// - Note: MPP status tracking requires external payment coordination.
+    ///   This implementation returns unknown status as MPP payments are atomic
+    ///   and don't persist state after completion. For real-time MPP status,
+    ///   use the MultiPathPaymentExecutor which tracks state during execution.
+    func checkMPPStatus(paymentId: String) async throws -> MPPStatus {
         guard isReady else {
             throw CashuError.walletNotInitialized
         }
 
-        // This would typically query a payment coordinator or check individual paths
-        // For now, returning a placeholder
+        // MPP payments in Cashu are atomic - either all paths succeed or all fail.
+        // The payment state exists only during execution in the MultiPathPaymentExecutor.
+        // Once complete, the payment result is returned and state is not persisted.
+        //
+        // For persistent MPP status tracking, the calling application should:
+        // 1. Store MPPSendResult after executeMultiPathPayment completes
+        // 2. Track payment states in application-level storage
+        //
+        // This method returns unknown status as there's no built-in persistence layer.
+        // Applications needing MPP history should implement their own tracking.
         return MPPStatus(
             paymentId: paymentId,
             totalAmount: 0,
@@ -319,7 +331,7 @@ public struct MPPPaymentResult: Sendable {
     public let amount: Int
 
     /// Error if payment failed
-    public let error: Error?
+    public let error: (any Error)?
 }
 
 /// Result of a multi-path payment send operation

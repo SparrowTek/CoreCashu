@@ -106,7 +106,7 @@ import Foundation
             name: name,
             value: value,
             type: .counter,
-            tags: tags ?? [:],
+            tags: tags,
             timestamp: Date(),
             unit: nil,
             description: nil
@@ -129,7 +129,7 @@ import Foundation
             name: name,
             value: value,
             type: .gauge,
-            tags: tags ?? [:],
+            tags: tags,
             timestamp: Date(),
             unit: nil,
             description: nil

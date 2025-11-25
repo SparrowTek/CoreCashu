@@ -7,7 +7,7 @@ public protocol WebSocketReconnectionStrategy: Sendable {
     ///   - attempt: The current attempt number (1-based)
     ///   - lastError: The error that caused the disconnection
     /// - Returns: The delay in seconds before attempting reconnection, or nil to stop retrying
-    func delay(for attempt: Int, lastError: Error?) async -> TimeInterval?
+    func delay(for attempt: Int, lastError: (any Error)?) async -> TimeInterval?
 
     /// Called when a reconnection attempt succeeds
     func reset() async
@@ -15,7 +15,7 @@ public protocol WebSocketReconnectionStrategy: Sendable {
     /// Check if reconnection should be attempted
     /// - Parameter error: The error that caused disconnection
     /// - Returns: true if reconnection should be attempted
-    func shouldReconnect(error: Error?) async -> Bool
+    func shouldReconnect(error: (any Error)?) async -> Bool
 }
 
 /// Exponential backoff reconnection strategy with jitter
@@ -65,7 +65,7 @@ public actor ExponentialBackoffStrategy: WebSocketReconnectionStrategy {
         self.configuration = configuration
     }
 
-    public func delay(for attempt: Int, lastError: Error?) async -> TimeInterval? {
+    public func delay(for attempt: Int, lastError: (any Error)?) async -> TimeInterval? {
         // Check max attempts
         if configuration.maxAttempts > 0 && attempt > configuration.maxAttempts {
             return nil
@@ -90,7 +90,7 @@ public actor ExponentialBackoffStrategy: WebSocketReconnectionStrategy {
         currentAttempt = 0
     }
 
-    public func shouldReconnect(error: Error?) async -> Bool {
+    public func shouldReconnect(error: (any Error)?) async -> Bool {
         // Check for non-retryable WebSocket close codes
         if let wsError = error as? WebSocketError,
            case .connectionClosed = wsError {
@@ -107,7 +107,7 @@ public actor ExponentialBackoffStrategy: WebSocketReconnectionStrategy {
         return true
     }
 
-    private func extractCloseCode(from error: Error?) -> Int? {
+    private func extractCloseCode(from error: (any Error)?) -> Int? {
         // Try to extract close code from various error types
         if let wsError = error as? WebSocketError {
             switch wsError {
@@ -139,7 +139,7 @@ public actor FixedIntervalStrategy: WebSocketReconnectionStrategy {
         self.maxAttempts = maxAttempts
     }
 
-    public func delay(for attempt: Int, lastError: Error?) async -> TimeInterval? {
+    public func delay(for attempt: Int, lastError: (any Error)?) async -> TimeInterval? {
         if maxAttempts > 0 && attempt > maxAttempts {
             return nil
         }
@@ -150,7 +150,7 @@ public actor FixedIntervalStrategy: WebSocketReconnectionStrategy {
         // No state to reset
     }
 
-    public func shouldReconnect(error: Error?) async -> Bool {
+    public func shouldReconnect(error: (any Error)?) async -> Bool {
         true
     }
 }
@@ -160,7 +160,7 @@ public struct NoReconnectionStrategy: WebSocketReconnectionStrategy {
 
     public init() {}
 
-    public func delay(for attempt: Int, lastError: Error?) async -> TimeInterval? {
+    public func delay(for attempt: Int, lastError: (any Error)?) async -> TimeInterval? {
         nil
     }
 
@@ -168,7 +168,7 @@ public struct NoReconnectionStrategy: WebSocketReconnectionStrategy {
         // No state to reset
     }
 
-    public func shouldReconnect(error: Error?) async -> Bool {
+    public func shouldReconnect(error: (any Error)?) async -> Bool {
         false
     }
 }

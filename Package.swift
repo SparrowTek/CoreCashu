@@ -39,8 +39,6 @@ let package = Package(
             ],
             swiftSettings: [
                 .enableUpcomingFeature("ExistentialAny"),
-                .enableUpcomingFeature("IsolatedDefaultValues"),
-                .enableUpcomingFeature("ConciseMagicFile"),
                 .unsafeFlags(["-strict-concurrency=complete"], .when(configuration: .debug))
             ]
         ),

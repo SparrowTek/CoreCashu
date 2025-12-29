@@ -23,21 +23,10 @@ CoreCashu provides a complete implementation of the Cashu protocol, enabling dev
 - ``Proof``
 - ``CashuToken``
 
-### Protocol Support (NUTs)
+### Guides
 
-- <doc:NUT00-CryptoConditions>
-- <doc:NUT01-MintInfo>
-- <doc:NUT02-Keysets>
-- <doc:NUT03-SwapTokens>
-- <doc:NUT04-MintTokens>
-- <doc:NUT05-MeltTokens>
-- <doc:NUT06-MintInformation>
-- <doc:NUT07-StateCheck>
-- <doc:NUT09-Restore>
-- <doc:NUT10-SecretTypes>
-- <doc:NUT11-P2PK>
-- <doc:NUT12-DLEQProofs>
-- <doc:NUT13-DeterministicSecrets>
+- <doc:Architecture>
+- <doc:Security>
 
 ### Advanced Features
 

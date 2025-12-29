@@ -1,34 +1,23 @@
 # ``CoreCashu``
 
-A comprehensive Swift implementation of the Cashu protocol for building privacy-preserving eCash wallets and applications.
+Internal Swift implementation of the Cashu protocol. This library provides the core cryptographic operations and protocol implementation used by CashuKit.
 
 ## Overview
 
-CoreCashu provides a complete implementation of the Cashu protocol, enabling developers to build applications that use Chaumian eCash for private, instant, and low-fee Bitcoin transactions. This library handles all the cryptographic operations, mint interactions, and protocol compliance required by the Cashu specification.
+CoreCashu is the foundational layer that implements the Cashu protocol specification. It handles blind signatures, mint interactions, and all NUT (Notation, Usage, and Terminology) implementations.
 
-### Key Features
-
-- **Complete Protocol Support**: Implements all essential Cashu NUTs (Notation, Usage, and Terminology specifications)
-- **Privacy-First**: Utilizes blind signatures to ensure transaction privacy
-- **Cross-Platform**: Works on macOS, iOS, Linux, and other Swift-supported platforms
-- **Type-Safe**: Leverages Swift's type system for safe and reliable code
-- **Modern Concurrency**: Built with Swift's async/await and actor model for thread-safe operations
+> Note: **End users should use CashuKit** for Apple platform development. CoreCashu is an internal library used by CashuKit and swift-cashu-mint.
 
 ## Topics
 
-### Essentials
+### Core Types
 
 - ``CashuWallet``
 - ``WalletConfiguration``
 - ``Proof``
 - ``CashuToken``
 
-### Guides
-
-- <doc:Architecture>
-- <doc:Security>
-
-### Advanced Features
+### Protocol Implementation
 
 - ``MintFeatureCapability``
 - ``MintFeatureCapabilityManager``
@@ -47,120 +36,37 @@ CoreCashu provides a complete implementation of the Cashu protocol, enabling dev
 - ``CashuError``
 - ``UserFriendlyError``
 
-## Getting Started
-
-### Creating a Wallet
-
-The main entry point for interacting with Cashu mints is the ``CashuWallet`` actor:
-
-```swift
-import CoreCashu
-
-// Create wallet configuration
-let config = WalletConfiguration(
-    mintURL: "https://mint.example.com",
-    unit: .sat
-)
-
-// Initialize the wallet
-let wallet = await CashuWallet(configuration: config)
-
-// Initialize connection to mint
-try await wallet.initializeWallet()
-```
-
-### Minting Tokens
-
-To create new eCash tokens from a Lightning invoice:
-
-```swift
-// Request a mint quote
-let quote = try await wallet.requestMintQuote(amount: 1000)
-
-// Pay the Lightning invoice...
-// Then mint tokens once payment is confirmed
-let proofs = try await wallet.mint(quote: quote)
-```
-
-### Sending Tokens
-
-Create a token that can be sent to another user:
-
-```swift
-// Create a sendable token
-let token = try await wallet.send(amount: 100)
-
-// The token string can be shared
-print("Send this token: \(token)")
-```
-
-### Receiving Tokens
-
-Process a received token:
-
-```swift
-// Receive and swap the token
-let proofs = try await wallet.receive(token: tokenString)
-print("Received \(proofs.totalAmount) sats")
-```
-
-### Checking Token State
-
-Verify if tokens are spent or unspent:
-
-```swift
-// Check if wallet supports state checking
-if wallet.isCapabilitySupported(.stateCheck) {
-    let states = try await wallet.checkProofStates(proofs)
-    for state in states {
-        print("Proof state: \(state)")
-    }
-}
-```
-
 ## Protocol Compliance
 
-CoreCashu implements the following Cashu NUTs (specifications):
+CoreCashu implements the following Cashu NUTs:
 
 | NUT | Description | Status |
 |-----|-------------|--------|
-| 00 | Cryptography and Models | ✅ Complete |
-| 01 | Mint public keys | ✅ Complete |
-| 02 | Keysets and keyset IDs | ✅ Complete |
-| 03 | Swap tokens | ✅ Complete |
-| 04 | Mint tokens | ✅ Complete |
-| 05 | Melt tokens | ✅ Complete |
-| 06 | Mint info | ✅ Complete |
-| 07 | Token state check | ✅ Complete |
-| 08 | Overpaid Lightning fees | ✅ Complete |
-| 09 | Restore signatures | ✅ Complete |
-| 10 | Spending conditions | ✅ Complete |
-| 11 | Pay to Public Key (P2PK) | ✅ Complete |
-| 12 | DLEQ proofs | ✅ Complete |
-| 13 | Deterministic secrets | ✅ Complete |
+| 00 | Cryptography and Models | Complete |
+| 01 | Mint public keys | Complete |
+| 02 | Keysets and keyset IDs | Complete |
+| 03 | Swap tokens | Complete |
+| 04 | Mint tokens | Complete |
+| 05 | Melt tokens | Complete |
+| 06 | Mint info | Complete |
+| 07 | Token state check | Complete |
+| 08 | Overpaid Lightning fees | Complete |
+| 09 | Restore signatures | Complete |
+| 10 | Spending conditions | Complete |
+| 11 | Pay to Public Key (P2PK) | Complete |
+| 12 | DLEQ proofs | Complete |
+| 13 | Deterministic secrets | Complete |
 
-## Security Considerations
+## Security Documentation
 
-CoreCashu implements several security best practices:
+Security auditors should review the following documents in `CoreCashu/Docs/`:
 
-- **Secure Random Generation**: Uses platform-specific cryptographically secure random number generators
-- **Memory Protection**: Implements secure memory wiping for sensitive data
-- **Secure Storage**: Provides encrypted storage options for keys and tokens
-- **No Logging of Secrets**: Ensures private keys and sensitive data are never logged
-
-For detailed security information, see the [Security Documentation](https://github.com/cashubtc/nuts/blob/main/SECURITY.md).
-
-## Requirements
-
-- Swift 6.0 or later
-- macOS 15.0+ / iOS 17.0+ / Linux
-- Dependencies:
-  - swift-secp256k1
-  - CryptoSwift
-  - BigInt
+- `threat_model.md` - STRIDE threat analysis
+- `security_assumptions.md` - Trust boundaries and assumptions
+- `audit_scope.md` - Security-critical code paths
+- `static_analysis_report.md` - Analysis findings
 
 ## See Also
 
 - [Cashu Protocol Specification](https://github.com/cashubtc/nuts)
-- [Cashu.space](https://docs.cashu.space)
-- ``CashuKit`` - Apple platform-specific extensions
+- [Cashu Documentation](https://docs.cashu.space)

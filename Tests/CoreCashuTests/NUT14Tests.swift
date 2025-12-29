@@ -17,7 +17,7 @@ struct NUT14Tests {
     @Test("HTLC preimage generation and verification")
     func testPreimageGeneration() throws {
         // Generate a preimage
-        let preimage = HTLCCreator.generatePreimage()
+        let preimage = try HTLCCreator.generatePreimage()
         #expect(preimage.count == 32)
         
         // Calculate hash
@@ -36,7 +36,7 @@ struct NUT14Tests {
     
     @Test("HTLC secret creation")
     func testHTLCSecretCreation() throws {
-        let preimage = HTLCCreator.generatePreimage()
+        let preimage = try HTLCCreator.generatePreimage()
         let pubkey = "02a9acc1e48c25eeeb9289b5031cc57da9fe72f3fe2861d264bdc074209b107ba2"
         
         let secret = try HTLCCreator.createHTLCSecret(
@@ -267,7 +267,7 @@ struct NUT14Tests {
     
     @Test("HTLC with multiple signatures")
     func testHTLCWithMultipleSignatures() throws {
-        let preimage = HTLCCreator.generatePreimage()
+        let preimage = try HTLCCreator.generatePreimage()
         let pubkeys = [
             "02698c4e2b5f9534cd0687d87513c759790cf829aa5739184a3e3735471fbda904",
             "03bc9337766d49c0b0de0e3e9d88e5c1732e27eaaa5224cf3d986065dac96e1eb5"

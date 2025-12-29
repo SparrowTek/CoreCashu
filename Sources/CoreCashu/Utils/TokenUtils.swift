@@ -366,7 +366,7 @@ public struct CashuTokenUtils {
                 
                 // Create a mint instance with the private key
                 let privateKey = try P256K.KeyAgreement.PrivateKey(dataRepresentation: privateKeyData)
-                let mint = try Mint(privateKey: privateKey)
+                let mint = Mint(privateKey: privateKey)
                 
                 // Verify the proof using the mint's verification method
                 let isValid = try mint.verifyToken(secret: proof.secret, signature: signatureData)
@@ -690,7 +690,7 @@ public struct MintKeys {
             throw CashuError.invalidHexString
         }
         
-        let mint = try Mint(privateKey: keypair.privateKey)
+        let mint = Mint(privateKey: keypair.privateKey)
         return try mint.verifyToken(secret: proof.secret, signature: signatureData)
     }
 }

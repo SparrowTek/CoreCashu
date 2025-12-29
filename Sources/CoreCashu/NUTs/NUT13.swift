@@ -406,9 +406,10 @@ public struct RestorationProgress: Sendable {
 // MARK: - Helpers
 
 extension Data {
-    static func random(count: Int) -> Data {
+    static func secureRandom(count: Int) throws -> Data {
         // Use cross-platform secure random generation
-        return (try? SecureRandom.generateBytes(count: count)) ?? Data(repeating: 0, count: count)
+        // SECURITY: Never fall back to weak random - this is used for cryptographic operations
+        return try SecureRandom.generateBytes(count: count)
     }
 }
 

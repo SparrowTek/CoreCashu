@@ -188,8 +188,8 @@ public struct Mint {
         self.keypair = try MintKeypair()
     }
     
-    public init(privateKey: P256K.KeyAgreement.PrivateKey) throws {
-        self.keypair = try MintKeypair(privateKey: privateKey)
+    public init(privateKey: P256K.KeyAgreement.PrivateKey) {
+        self.keypair = MintKeypair(privateKey: privateKey)
     }
     
     /// Step 2 of BDHKE: Mint signs the blinded message
@@ -325,7 +325,7 @@ public struct Wallet {
     /// This simulates what the mint would do: check k*hash_to_curve(x) == C
     /// WARNING: This requires knowing the mint's private key, which wallets don't have
     public static func verifyTokenWithMintKey(_ token: UnblindedToken, mintPrivateKey: P256K.KeyAgreement.PrivateKey) throws -> Bool {
-        let mint = try Mint(privateKey: mintPrivateKey)
+        let mint = Mint(privateKey: mintPrivateKey)
         return try mint.verifyToken(secret: token.secret, signature: token.signature)
     }
 }

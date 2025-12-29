@@ -316,7 +316,7 @@ public struct HTLCCreator: Sendable {
         }
         
         // Generate nonce
-        let nonce = generateNonce()
+        let nonce = try generateNonce()
         
         // Calculate hash lock
         let hashLock = SHA256.hash(data: preimage)
@@ -361,14 +361,17 @@ public struct HTLCCreator: Sendable {
     }
     
     /// Generate a random 32-byte preimage
-    public static func generatePreimage() -> Data {
+    /// - Throws: CashuError.keyGenerationFailed if secure random generation fails
+    public static func generatePreimage() throws -> Data {
         // Use cross-platform secure random generation
-        return (try? SecureRandom.generateKey()) ?? Data(repeating: 0, count: 32)
+        // SECURITY: Never fall back to weak random - cryptographic preimages must be secure
+        return try SecureRandom.generateKey()
     }
     
-    private static func generateNonce() -> String {
+    private static func generateNonce() throws -> String {
         // Use cross-platform secure random generation
-        let nonce = (try? SecureRandom.generateNonce()) ?? Data(repeating: 0, count: 16)
+        // SECURITY: Never fall back to weak random - cryptographic nonces must be secure
+        let nonce = try SecureRandom.generateNonce()
         return nonce.hexString
     }
 }

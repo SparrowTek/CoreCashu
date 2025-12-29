@@ -302,16 +302,23 @@ public actor CashuWallet {
         // Use provided metrics or default to no-op
         self.metrics = metrics ?? NoOpMetricsClient()
         
-        // Store mnemonic securely if secure store is available
-        if let secureStore = self.secureStore {
-            try await secureStore.saveMnemonic(mnemonic)
+        // Validate mnemonic BEFORE storing (security: prevents persisting invalid data)
+        // DeterministicSecretDerivation validates internally but we fail fast here
+        // to avoid any state changes before validation
+        guard BIP39.validateMnemonic(mnemonic) else {
+            throw CashuError.invalidMnemonic
         }
         
-        // Initialize deterministic derivation
+        // Initialize deterministic derivation (validation passed)
         self.deterministicDerivation = try DeterministicSecretDerivation(
             mnemonic: mnemonic,
             passphrase: passphrase
         )
+        
+        // Store mnemonic securely AFTER validation succeeds
+        if let secureStore = self.secureStore {
+            try await secureStore.saveMnemonic(mnemonic)
+        }
         
         // Initialize services
         await setupServices()

@@ -178,9 +178,10 @@ public struct BlankOutputGenerator {
             // Create blinding data
             let blindingData = try WalletBlindingData(secret: secret)
             
-            // Create blinded message with placeholder amount (will be set by mint)
+            // Create blinded message - amount is set to 1 as a convention since
+            // the mint determines actual amounts for blank outputs in NUT-08
             let blindedMessage = BlindedMessage(
-                amount: 1, // Placeholder amount - ignored by mint in NUT-08
+                amount: 1, // Nominal value - mint determines actual amount for blank outputs
                 id: keysetID,
                 B_: blindingData.blindedMessage.dataRepresentation.hexString
             )

@@ -48,8 +48,8 @@ public actor FileSecureStore: SecureStore {
             password: String? = nil,
             fileNames: FileNames = .default,
             keyMaterialFileName: String = "secure_store_master_key.json",
-            pbkdfRounds: Int = 200_000,
-            nonceLength: Int = 12
+            pbkdfRounds: Int = CryptoConstants.pbkdfRounds,
+            nonceLength: Int = CryptoConstants.gcmNonceLength
         ) {
             self.directory = directory
             self.password = password
@@ -284,7 +284,7 @@ public actor FileSecureStore: SecureStore {
         }
 
         // Overwrite with random bytes before removal (best-effort sanitisation)
-        if let filler = try? SecureRandom.generateBytes(count: 1024) {
+        if let filler = try? SecureRandom.generateBytes(count: CryptoConstants.secureOverwriteSize) {
             try? filler.write(to: url, options: .atomic)
         }
 
@@ -326,7 +326,7 @@ public actor FileSecureStore: SecureStore {
     private func encrypt(_ plaintext: Data) throws -> Data {
         let nonceData = try SecureRandom.generateBytes(count: configuration.nonceLength)
         let nonceBytes = Array(nonceData)
-        let gcm = GCM(iv: nonceBytes, tagLength: 16, mode: .combined)
+        let gcm = GCM(iv: nonceBytes, tagLength: CryptoConstants.gcmTagLength, mode: .combined)
         let aes = try AES(key: keyState.keyBytes, blockMode: gcm, padding: .noPadding)
         let ciphertext = try aes.encrypt(Array(plaintext))
 
@@ -357,7 +357,7 @@ public actor FileSecureStore: SecureStore {
         let nonce = Array(bytes[2..<(2 + nonceLength)])
         let ciphertext = Array(bytes[(2 + nonceLength)...])
 
-        let gcm = GCM(iv: nonce, tagLength: 16, mode: .combined)
+        let gcm = GCM(iv: nonce, tagLength: CryptoConstants.gcmTagLength, mode: .combined)
         let aes = try AES(key: keyState.keyBytes, blockMode: gcm, padding: .noPadding)
 
         let plaintext = try aes.decrypt(ciphertext)
@@ -378,13 +378,13 @@ public actor FileSecureStore: SecureStore {
         try FileManager.default.createDirectory(
             at: directory,
             withIntermediateDirectories: true,
-            attributes: [.posixPermissions: 0o700]
+            attributes: [.posixPermissions: FileSystemConstants.directoryPermissions]
         )
     }
 
     private static func hardenFile(at url: URL) throws {
         try FileManager.default.setAttributes([
-            .posixPermissions: 0o600
+            .posixPermissions: FileSystemConstants.filePermissions
         ], ofItemAtPath: url.path)
     }
 
@@ -467,7 +467,7 @@ public actor FileSecureStore: SecureStore {
         let keyBytes: [UInt8]
 
         if let password = configuration.password {
-            let salt = try SecureRandom.generateBytes(count: 32)
+            let salt = try SecureRandom.generateBytes(count: CryptoConstants.saltLength)
             let derivedKey = try deriveKey(
                 password: password,
                 salt: salt,
@@ -483,7 +483,7 @@ public actor FileSecureStore: SecureStore {
             )
             container = KeyContainer(metadata: saltedMetadata, keyData: nil)
         } else {
-            let keyData = try SecureRandom.generateBytes(count: 32)
+            let keyData = try SecureRandom.generateBytes(count: CryptoConstants.aesKeyLength)
             keyBytes = Array(keyData)
             container = KeyContainer(metadata: metadata, keyData: keyData)
         }
@@ -502,7 +502,7 @@ public actor FileSecureStore: SecureStore {
             password: passwordBytes,
             salt: saltBytes,
             iterations: rounds,
-            keyLength: 32,
+            keyLength: CryptoConstants.aesKeyLength,
             variant: .sha2(.sha256)
         ).calculate()
         return derived

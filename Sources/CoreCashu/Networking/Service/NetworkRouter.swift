@@ -128,7 +128,7 @@ internal class NetworkRouter<Endpoint: EndpointType>: NetworkRouterProtocol {
         
         var request = URLRequest(url: route.baseURL.appendingPathComponent(route.path),
                                        cachePolicy: .reloadIgnoringLocalAndRemoteCacheData,
-                                       timeoutInterval: 10.0)
+                                       timeoutInterval: NetworkConstants.defaultRequestTimeout)
         
         request.httpMethod = route.httpMethod.rawValue
         do {

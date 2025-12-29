@@ -74,7 +74,7 @@ public extension CashuWallet {
     /// - Returns: Total restored balance
     @discardableResult
     func restoreFromSeed(
-        batchSize: Int = 100,
+        batchSize: Int = RestorationConstants.defaultBatchSize,
         onProgress: ((RestorationProgress) async -> Void)? = nil
     ) async throws -> Int {
         guard let derivation = deterministicDerivation else {
@@ -153,7 +153,7 @@ extension CashuWallet {
         batchSize: Int,
         onProgress: ((RestorationProgress) async -> Void)?
     ) async throws -> Int {
-        let maxEmptyBatches = 3
+        let maxEmptyBatches = RestorationConstants.maxEmptyBatches
         var totalRestoredBalance = 0
         var consecutiveEmptyBatches = 0
         var currentCounter = await keysetCounterManager.getCounter(for: keysetID)

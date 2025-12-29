@@ -40,9 +40,9 @@ public actor RobustWebSocketClient: WebSocketClientProtocol {
             reconnectionStrategy: any WebSocketReconnectionStrategy = ExponentialBackoffStrategy(),
             queueConfig: WebSocketMessageQueue.Configuration = WebSocketMessageQueue.Configuration(),
             queueWhileDisconnected: Bool = true,
-            heartbeatInterval: TimeInterval = 30,
-            connectionTimeout: TimeInterval = 30,
-            maxHeartbeatFailures: Int = 3
+            heartbeatInterval: TimeInterval = WebSocketConstants.heartbeatInterval,
+            connectionTimeout: TimeInterval = WebSocketConstants.connectionTimeout,
+            maxHeartbeatFailures: Int = WebSocketConstants.maxHeartbeatFailures
         ) {
             self.webSocketConfig = webSocketConfig
             self.reconnectionStrategy = reconnectionStrategy
@@ -323,7 +323,7 @@ public actor RobustWebSocketClient: WebSocketClientProtocol {
                 }
 
                 // Wait before reconnecting
-                try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                try? await Task.sleep(nanoseconds: TimeConversion.secondsToNanoseconds(delay))
 
                 guard !Task.isCancelled else { break }
 
@@ -365,7 +365,7 @@ public actor RobustWebSocketClient: WebSocketClientProtocol {
 
         heartbeatTask = Task {
             while !Task.isCancelled && isConnected {
-                try? await Task.sleep(nanoseconds: UInt64(configuration.heartbeatInterval * 1_000_000_000))
+                try? await Task.sleep(nanoseconds: TimeConversion.secondsToNanoseconds(configuration.heartbeatInterval))
 
                 guard !Task.isCancelled && isConnected else { break }
 
@@ -397,11 +397,11 @@ public actor RobustWebSocketClient: WebSocketClientProtocol {
                         await messageQueue.requeue(queuedMessage)
 
                         // Brief pause before retrying
-                        try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 second
+                        try? await Task.sleep(nanoseconds: WebSocketConstants.messageQueueRetryDelayNanoseconds)
                     }
                 } else {
                     // No messages, wait a bit
-                    try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 second
+                    try? await Task.sleep(nanoseconds: WebSocketConstants.messageQueueRetryDelayNanoseconds)
                 }
             }
         }
@@ -416,7 +416,7 @@ public actor RobustWebSocketClient: WebSocketClientProtocol {
 
             // Add timeout task
             group.addTask {
-                try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+                try await Task.sleep(nanoseconds: TimeConversion.secondsToNanoseconds(seconds))
                 throw WebSocketError.timeout
             }
 

@@ -15,9 +15,9 @@ public struct RateLimitConfiguration: Sendable {
     public let burstCapacity: Int
     
     public init(
-        maxRequests: Int = 60,
-        timeWindow: TimeInterval = 60.0,
-        burstCapacity: Int = 10
+        maxRequests: Int = RateLimitConstants.defaultMaxRequests,
+        timeWindow: TimeInterval = RateLimitConstants.defaultTimeWindow,
+        burstCapacity: Int = RateLimitConstants.defaultBurstCapacity
     ) {
         self.maxRequests = maxRequests
         self.timeWindow = timeWindow
@@ -25,8 +25,16 @@ public struct RateLimitConfiguration: Sendable {
     }
     
     public static let `default` = RateLimitConfiguration()
-    public static let strict = RateLimitConfiguration(maxRequests: 30, timeWindow: 60.0, burstCapacity: 5)
-    public static let relaxed = RateLimitConfiguration(maxRequests: 120, timeWindow: 60.0, burstCapacity: 20)
+    public static let strict = RateLimitConfiguration(
+        maxRequests: RateLimitConstants.strictMaxRequests,
+        timeWindow: RateLimitConstants.defaultTimeWindow,
+        burstCapacity: RateLimitConstants.strictBurstCapacity
+    )
+    public static let relaxed = RateLimitConfiguration(
+        maxRequests: RateLimitConstants.relaxedMaxRequests,
+        timeWindow: RateLimitConstants.defaultTimeWindow,
+        burstCapacity: RateLimitConstants.relaxedBurstCapacity
+    )
 }
 
 // MARK: - Rate Limiter
@@ -79,7 +87,7 @@ public actor RateLimiter {
         while !shouldAllowRequest() {
             let waitTime = calculateWaitTime()
             // logger.info("Rate limit: Waiting \(String(format: "%.2f", waitTime))s before next request")
-            try await Task.sleep(nanoseconds: UInt64(waitTime * 1_000_000_000))
+            try await Task.sleep(nanoseconds: TimeConversion.secondsToNanoseconds(waitTime))
         }
     }
     
@@ -138,10 +146,10 @@ public actor RateLimiter {
         let tokensNeeded = 1.0 - tokens
         if tokensNeeded > 0 {
             let refillTime = (tokensNeeded / Double(configuration.maxRequests)) * configuration.timeWindow
-            return max(0.1, refillTime)
+            return max(RateLimitConstants.minimumWaitTime, refillTime)
         }
         
-        return 0.1 // Default minimal wait
+        return RateLimitConstants.minimumWaitTime
     }
     
     private func calculateNextResetTime() -> Date {

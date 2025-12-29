@@ -42,12 +42,12 @@ public actor ExponentialBackoffStrategy: WebSocketReconnectionStrategy {
         public let nonRetryableErrors: Set<Int>
 
         public init(
-            initialDelay: TimeInterval = 1.0,
-            maxDelay: TimeInterval = 60.0,
-            multiplier: Double = 2.0,
-            maxAttempts: Int = 0,
-            jitterFactor: Double = 0.2,
-            nonRetryableErrors: Set<Int> = [1002, 1003, 1008] // Protocol error, unsupported data, policy violation
+            initialDelay: TimeInterval = ReconnectionConstants.defaultInitialDelay,
+            maxDelay: TimeInterval = ReconnectionConstants.defaultMaxDelay,
+            multiplier: Double = ReconnectionConstants.defaultMultiplier,
+            maxAttempts: Int = ReconnectionConstants.defaultMaxAttempts,
+            jitterFactor: Double = ReconnectionConstants.defaultJitterFactor,
+            nonRetryableErrors: Set<Int> = ReconnectionConstants.nonRetryableCloseCodes
         ) {
             self.initialDelay = initialDelay
             self.maxDelay = maxDelay
@@ -134,7 +134,7 @@ public actor FixedIntervalStrategy: WebSocketReconnectionStrategy {
     private let interval: TimeInterval
     private let maxAttempts: Int
 
-    public init(interval: TimeInterval = 5.0, maxAttempts: Int = 10) {
+    public init(interval: TimeInterval = ReconnectionConstants.fixedInterval, maxAttempts: Int = ReconnectionConstants.fixedMaxAttempts) {
         self.interval = interval
         self.maxAttempts = maxAttempts
     }

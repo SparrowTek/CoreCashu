@@ -225,29 +225,22 @@ extension HTLCWitness {
         )
     }
     
-    /// Create witness for spending with preimage and signatures
+    /// Create witness for spending with preimage and signatures using BIP340 Schnorr
+    /// - Parameters:
+    ///   - preimage: The HTLC preimage
+    ///   - signatures: Array of tuples containing private key data (32 bytes) and message to sign
+    /// - Returns: HTLCWitness with preimage and valid Schnorr signatures
     public static func createForPreimageAndSignatures(
         preimage: Data,
-        signatures: [(privateKey: P256K.KeyAgreement.PrivateKey, message: String)]
+        signatures: [(privateKeyData: Data, message: String)]
     ) throws -> HTLCWitness {
         var signatureStrings: [String] = []
         
-        for (_, message) in signatures {
-            // Create signature using P256K
-            guard let messageData = message.data(using: .utf8) else {
-                throw CashuError.invalidSignature("Invalid message encoding")
-            }
-            
-            // For P2PK signatures, we need to use a deterministic nonce
-            // This is a simplified version - in production you'd use proper ECDSA
-            let messageHash = SHA256.hash(data: messageData)
-            let hashData = Data(messageHash)
-            
-            // Create a mock signature for now (64 bytes: r + s)
-            // In a real implementation, you'd use proper ECDSA signing
-            let mockSignature = hashData + hashData
-            let signature = mockSignature.hexString
-            
+        for (privateKeyData, message) in signatures {
+            let signature = try createSchnorrSignature(
+                privateKeyData: privateKeyData,
+                message: message
+            )
             signatureStrings.append(signature)
         }
         
@@ -257,38 +250,62 @@ extension HTLCWitness {
         )
     }
     
-    /// Create witness for refund (signatures only, no preimage)
+    /// Create witness for refund (signatures only, no preimage) using BIP340 Schnorr
+    /// - Parameter signatures: Array of tuples containing private key data (32 bytes) and message to sign
+    /// - Returns: HTLCWitness with empty preimage and valid Schnorr signatures
     public static func createForRefund(
-        signatures: [(privateKey: P256K.KeyAgreement.PrivateKey, message: String)]
+        signatures: [(privateKeyData: Data, message: String)]
     ) throws -> HTLCWitness {
         var signatureStrings: [String] = []
         
-        for (_, message) in signatures {
-            // Create signature using P256K
-            guard let messageData = message.data(using: .utf8) else {
-                throw CashuError.invalidSignature("Invalid message encoding")
-            }
-            
-            // For P2PK signatures, we need to use a deterministic nonce
-            // This is a simplified version - in production you'd use proper ECDSA
-            let messageHash = SHA256.hash(data: messageData)
-            let hashData = Data(messageHash)
-            
-            // Create a mock signature for now (64 bytes: r + s)
-            // In a real implementation, you'd use proper ECDSA signing
-            let mockSignature = hashData + hashData
-            let signature = mockSignature.hexString
-            
+        for (privateKeyData, message) in signatures {
+            let signature = try createSchnorrSignature(
+                privateKeyData: privateKeyData,
+                message: message
+            )
             signatureStrings.append(signature)
         }
         
-        // Use empty/zero preimage for refund
+        // Use empty/zero preimage for refund (refund doesn't require preimage knowledge)
         let zeroPreimage = Data(repeating: 0, count: 32)
         
         return HTLCWitness(
             preimage: zeroPreimage.hexString,
             signatures: signatureStrings
         )
+    }
+    
+    /// Create a BIP340 Schnorr signature for a message
+    /// - Parameters:
+    ///   - privateKeyData: 32-byte private key data
+    ///   - message: Message string to sign (will be SHA256 hashed)
+    /// - Returns: Hex-encoded 64-byte Schnorr signature
+    private static func createSchnorrSignature(
+        privateKeyData: Data,
+        message: String
+    ) throws -> String {
+        guard privateKeyData.count == 32 else {
+            throw CashuError.invalidSignature("Private key must be 32 bytes")
+        }
+        
+        guard let messageData = message.data(using: .utf8) else {
+            throw CashuError.invalidSignature("Invalid message encoding")
+        }
+        
+        // Hash the message with SHA256 (BIP340 signs 32-byte messages)
+        let messageHash = SHA256.hash(data: messageData)
+        let hashData = Data(messageHash)
+        
+        // Create Schnorr private key
+        let schnorrPrivateKey = try P256K.Schnorr.PrivateKey(dataRepresentation: privateKeyData)
+        
+        // Generate auxiliary randomness for BIP340 (improves side-channel resistance)
+        let auxiliaryRand = try Array(SecureRandom.generateBytes(count: 32))
+        
+        // Create the Schnorr signature
+        let signature = try schnorrPrivateKey.signature(for: hashData, auxiliaryRand: auxiliaryRand)
+        
+        return signature.dataRepresentation.hexString
     }
 }
 

@@ -9,8 +9,8 @@
 import Foundation
 import CryptoKit
 @preconcurrency import P256K
-// TODO: Replace BitcoinDevKit with cross-platform implementation if needed
-// import BitcoinDevKit
+// Note: BitcoinDevKit was previously considered but P256K provides all necessary
+// cryptographic primitives (Schnorr signatures, key derivation) for Cashu NUTs
 import BigInt
 
 // MARK: - NUT-20: Signature on Mint Quote

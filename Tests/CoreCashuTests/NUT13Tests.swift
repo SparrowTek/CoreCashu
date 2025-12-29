@@ -282,11 +282,12 @@ struct NUT13Tests {
     @Test("Test vector: Secret derivation")
     func testVectorSecretDerivation() throws {
         // Test vector from NUT-13 specification
+        // https://github.com/cashubtc/nuts/blob/main/tests/13-tests.md
         let mnemonic = "half depart obvious quality work element tank gorilla view sugar picture humble"
         let derivation = try DeterministicSecretDerivation(mnemonic: mnemonic)
         let keysetID = "009a1f293253e41e"
         
-        // Expected secrets for counters 0-4
+        // Expected secrets for counters 0-4 (from official NUT-13 test vectors)
         let expectedSecrets = [
             "485875df74771877439ac06339e284c3acfcd9be7abf3bc20b516faeadfe77ae",
             "8f2b39e8e594a4056eb1e6dbb4b0c38ef13b1b2c751f64f810ec04ee35b77270",
@@ -295,29 +296,27 @@ struct NUT13Tests {
             "576c23393a8b31cc8da6688d9c9a96394ec74b40fdaf1f693a6bb84284334ea0"
         ]
         
-        // NOTE: The current BIP32 implementation is simplified and doesn't match the reference implementation exactly.
-        // This causes the derived secrets to differ from the test vectors.
-        // TODO: Implement full BIP32 specification compliance
-        
-        // For now, just verify that derivation is deterministic
+        // Verify secrets match official test vectors
         for counter in 0..<5 {
-            let secret1 = try derivation.deriveSecret(keysetID: keysetID, counter: UInt32(counter))
-            let secret2 = try derivation.deriveSecret(keysetID: keysetID, counter: UInt32(counter))
-            #expect(secret1 == secret2, "Secret derivation should be deterministic for counter \(counter)")
-            
-            // The actual values don't match test vectors due to simplified BIP32 implementation
-            // #expect(secret1 == expectedSecrets[counter], "Secret for counter \(counter) should match test vector")
+            let secret = try derivation.deriveSecret(keysetID: keysetID, counter: UInt32(counter))
+            #expect(secret == expectedSecrets[counter], "Secret for counter \(counter) should match NUT-13 test vector")
         }
+        
+        // Verify determinism (same inputs produce same outputs)
+        let secret1 = try derivation.deriveSecret(keysetID: keysetID, counter: 0)
+        let secret2 = try derivation.deriveSecret(keysetID: keysetID, counter: 0)
+        #expect(secret1 == secret2, "Secret derivation should be deterministic")
     }
     
     @Test("Test vector: Blinding factor derivation")
     func testVectorBlindingFactorDerivation() throws {
         // Test vector from NUT-13 specification
+        // https://github.com/cashubtc/nuts/blob/main/tests/13-tests.md
         let mnemonic = "half depart obvious quality work element tank gorilla view sugar picture humble"
         let derivation = try DeterministicSecretDerivation(mnemonic: mnemonic)
         let keysetID = "009a1f293253e41e"
         
-        // Expected blinding factors (r values) for counters 0-4
+        // Expected blinding factors (r values) for counters 0-4 (from official NUT-13 test vectors)
         let expectedBlindingFactors = [
             "ad00d431add9c673e843d4c2bf9a778a5f402b985b8da2d5550bf39cda41d679",
             "967d5232515e10b81ff226ecf5a9e2e2aff92d66ebc3edf0987eb56357fd6248",
@@ -326,38 +325,30 @@ struct NUT13Tests {
             "5f09bfbfe27c439a597719321e061e2e40aad4a36768bb2bcc3de547c9644bf9"
         ]
         
-        // NOTE: The current BIP32 implementation is simplified and doesn't match the reference implementation exactly.
-        // This causes the derived blinding factors to differ from the test vectors.
-        // TODO: Implement full BIP32 specification compliance
-        
-        // For now, just verify that derivation is deterministic
+        // Verify blinding factors match official test vectors
         for counter in 0..<5 {
-            let r1 = try derivation.deriveBlindingFactor(keysetID: keysetID, counter: UInt32(counter))
-            let r2 = try derivation.deriveBlindingFactor(keysetID: keysetID, counter: UInt32(counter))
-            #expect(r1 == r2, "Blinding factor derivation should be deterministic for counter \(counter)")
-            
-            // The actual values don't match test vectors due to simplified BIP32 implementation
-            // #expect(r1.hexString == expectedBlindingFactors[counter], "Blinding factor for counter \(counter) should match test vector")
+            let r = try derivation.deriveBlindingFactor(keysetID: keysetID, counter: UInt32(counter))
+            #expect(r.hexString == expectedBlindingFactors[counter], "Blinding factor for counter \(counter) should match NUT-13 test vector")
         }
+        
+        // Verify determinism (same inputs produce same outputs)
+        let r1 = try derivation.deriveBlindingFactor(keysetID: keysetID, counter: 0)
+        let r2 = try derivation.deriveBlindingFactor(keysetID: keysetID, counter: 0)
+        #expect(r1 == r2, "Blinding factor derivation should be deterministic")
     }
     
     @Test("Test vector: Derivation paths")
     func testVectorDerivationPaths() throws {
         // Test vector from NUT-13 specification
+        // https://github.com/cashubtc/nuts/blob/main/tests/13-tests.md
         let mnemonic = "half depart obvious quality work element tank gorilla view sugar picture humble"
         let derivation = try DeterministicSecretDerivation(mnemonic: mnemonic)
         let keysetID = "009a1f293253e41e"
         
-        // Verify that the derivation paths are correctly formatted
-        // The expected paths from the test vector are:
-        // m/129372'/0'/864559728'/0'
-        // m/129372'/0'/864559728'/1'
-        // m/129372'/0'/864559728'/2'
-        // m/129372'/0'/864559728'/3'
-        // m/129372'/0'/864559728'/4'
-        
-        // NOTE: The current BIP32 implementation is simplified and doesn't match the reference implementation exactly.
-        // TODO: Implement full BIP32 specification compliance
+        // The expected derivation paths are:
+        // m/129372'/0'/864559728'/0'/0 (for secret at counter 0)
+        // m/129372'/0'/864559728'/0'/1 (for blinding factor at counter 0)
+        // etc.
         
         // Verify determinism - same path should always produce same secret
         let firstSecret = try derivation.deriveSecret(keysetID: keysetID, counter: 0)
@@ -367,5 +358,121 @@ struct NUT13Tests {
         // Verify different counters produce different secrets
         let secondSecret = try derivation.deriveSecret(keysetID: keysetID, counter: 1)
         #expect(firstSecret != secondSecret, "Different counters should produce different secrets")
+        
+        // Verify different keysets produce different secrets
+        let differentKeysetID = "00ad268c4d1f5826"
+        let differentKeysetSecret = try derivation.deriveSecret(keysetID: differentKeysetID, counter: 0)
+        #expect(firstSecret != differentKeysetSecret, "Different keyset IDs should produce different secrets")
+        
+        // Verify secret and blinding factor at same counter are different
+        let blindingFactor = try derivation.deriveBlindingFactor(keysetID: keysetID, counter: 0)
+        #expect(firstSecret != blindingFactor.hexString, "Secret and blinding factor at same counter should differ")
+    }
+    
+    // MARK: - BIP32 Compliance Tests
+    
+    @Test("BIP32 master key derivation from seed")
+    func testBIP32MasterKeyDerivation() throws {
+        // The BIP32 spec says master key is created using HMAC-SHA512 with key "Bitcoin seed"
+        // and the seed as data. The left 32 bytes are the private key, right 32 bytes are chain code.
+        let mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+        
+        // Verify derivation produces consistent results
+        let derivation1 = try DeterministicSecretDerivation(mnemonic: mnemonic)
+        let derivation2 = try DeterministicSecretDerivation(mnemonic: mnemonic)
+        
+        let secret1 = try derivation1.deriveSecret(keysetID: "009a1f293253e41e", counter: 0)
+        let secret2 = try derivation2.deriveSecret(keysetID: "009a1f293253e41e", counter: 0)
+        
+        #expect(secret1 == secret2, "Same mnemonic should produce same derived secrets")
+    }
+    
+    @Test("BIP32 hardened child key derivation")
+    func testBIP32HardenedDerivation() throws {
+        // All path components in NUT-13 except the last one are hardened (index >= 0x80000000)
+        // This test verifies hardened derivation works correctly
+        let mnemonic = "half depart obvious quality work element tank gorilla view sugar picture humble"
+        let derivation = try DeterministicSecretDerivation(mnemonic: mnemonic)
+        
+        // Test with multiple counters to verify hardened derivation
+        var secrets: [String] = []
+        for counter: UInt32 in 0..<10 {
+            let secret = try derivation.deriveSecret(keysetID: "009a1f293253e41e", counter: counter)
+            #expect(!secrets.contains(secret), "Each counter should produce unique secret")
+            secrets.append(secret)
+        }
+        
+        #expect(secrets.count == 10, "Should have 10 unique secrets")
+    }
+    
+    @Test("BIP39 seed generation with passphrase")
+    func testBIP39SeedWithPassphrase() throws {
+        let mnemonic = "half depart obvious quality work element tank gorilla view sugar picture humble"
+        
+        // Without passphrase
+        let derivation1 = try DeterministicSecretDerivation(mnemonic: mnemonic, passphrase: "")
+        let secret1 = try derivation1.deriveSecret(keysetID: "009a1f293253e41e", counter: 0)
+        
+        // With passphrase
+        let derivation2 = try DeterministicSecretDerivation(mnemonic: mnemonic, passphrase: "my secret passphrase")
+        let secret2 = try derivation2.deriveSecret(keysetID: "009a1f293253e41e", counter: 0)
+        
+        // Same mnemonic with different passphrases should produce different secrets
+        #expect(secret1 != secret2, "Different passphrases should produce different secrets")
+        
+        // Same mnemonic + passphrase should be deterministic
+        let derivation3 = try DeterministicSecretDerivation(mnemonic: mnemonic, passphrase: "my secret passphrase")
+        let secret3 = try derivation3.deriveSecret(keysetID: "009a1f293253e41e", counter: 0)
+        #expect(secret2 == secret3, "Same mnemonic + passphrase should produce same secret")
+    }
+    
+    @Test("Keyset ID to integer edge cases")
+    func testKeysetIDToIntEdgeCases() throws {
+        let derivation = try DeterministicSecretDerivation(masterKey: Data(repeating: 0, count: 64))
+        
+        // Test the official test vector keyset ID
+        let keysetID = "009a1f293253e41e"
+        let keysetInt = try derivation.keysetIDToInt(keysetID)
+        #expect(keysetInt == 864559728, "Keyset ID should convert to 864559728 per NUT-13 spec")
+        
+        // Test all zeros keyset ID
+        let zeroKeysetInt = try derivation.keysetIDToInt("0000000000000000")
+        #expect(zeroKeysetInt == 0, "All-zero keyset ID should convert to 0")
+        
+        // Verify result is always less than 2^31 - 1 (max keyset int)
+        let maxKeysetInt: UInt32 = UInt32(1 << 31) - 1
+        #expect(keysetInt < maxKeysetInt, "Keyset int should be less than 2^31 - 1")
+        
+        // Test invalid keyset ID (wrong length)
+        #expect(throws: CashuError.self) {
+            _ = try derivation.keysetIDToInt("009a1f29")  // Too short (4 bytes instead of 8)
+        }
+        
+        #expect(throws: CashuError.self) {
+            _ = try derivation.keysetIDToInt("009a1f293253e41e00")  // Too long (9 bytes instead of 8)
+        }
+        
+        // Test invalid hex string
+        #expect(throws: CashuError.self) {
+            _ = try derivation.keysetIDToInt("gggggggggggggggg")  // Invalid hex chars
+        }
+    }
+    
+    @Test("Large counter values")
+    func testLargeCounterValues() throws {
+        let mnemonic = "half depart obvious quality work element tank gorilla view sugar picture humble"
+        let derivation = try DeterministicSecretDerivation(mnemonic: mnemonic)
+        let keysetID = "009a1f293253e41e"
+        
+        // Test with large counter values
+        let largeCounters: [UInt32] = [1000, 10000, 100000, UInt32.max - 1]
+        
+        for counter in largeCounters {
+            let secret = try derivation.deriveSecret(keysetID: keysetID, counter: counter)
+            #expect(secret.count == 64, "Secret should be 32 bytes (64 hex chars) for counter \(counter)")
+            
+            let r = try derivation.deriveBlindingFactor(keysetID: keysetID, counter: counter)
+            #expect(r.count == 32, "Blinding factor should be 32 bytes for counter \(counter)")
+        }
     }
 }

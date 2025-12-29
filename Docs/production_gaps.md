@@ -23,6 +23,11 @@ Last Updated: 2025-09-26 after Phase 6 completion.
 ## CoreCashu Tests
 - [ ] `Tests/CoreCashuTests/IntegrationTests.swift:16` – Unskip or implement integration test to pass
 - [x] `Tests/CoreCashuTests/NUT13Tests.swift:12` – Replace BitcoinDevKit with cross-platform BIP39 implementation
-- [ ] `Tests/CoreCashuTests/NUT13Tests.swift:266` – Implement full BIP32 specification compliance
-- [ ] `Tests/CoreCashuTests/NUT13Tests.swift:297` – Implement full BIP32 specification compliance
-- [ ] `Tests/CoreCashuTests/NUT13Tests.swift:326` – Implement full BIP32 specification compliance
+- [x] `Tests/CoreCashuTests/NUT13Tests.swift:266` – Implement full BIP32 specification compliance (December 29, 2025)
+- [x] `Tests/CoreCashuTests/NUT13Tests.swift:297` – Implement full BIP32 specification compliance (December 29, 2025)
+- [x] `Tests/CoreCashuTests/NUT13Tests.swift:326` – Implement full BIP32 specification compliance (December 29, 2025)
+
+### BIP32/NUT-13 Compliance (Completed December 29, 2025)
+- All 5 secret test vectors from NUT-13 spec verified
+- All 5 blinding factor test vectors from NUT-13 spec verified
+- Added tests: BIP32 master key derivation, hardened child key derivation, passphrase handling, edge cases

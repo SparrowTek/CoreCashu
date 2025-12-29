@@ -217,8 +217,11 @@ public struct Mint {
         let secretPoint = try hashToCurve(secret)
         let expectedSignature = try multiplyPoint(secretPoint, by: keypair.privateKey)
         
-        // Compare the points
-        return signaturePublicKey.dataRepresentation == expectedSignature.dataRepresentation
+        // Compare the points using constant-time comparison to prevent timing attacks
+        return SecureMemory.constantTimeCompare(
+            signaturePublicKey.dataRepresentation,
+            expectedSignature.dataRepresentation
+        )
     }
 }
 

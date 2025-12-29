@@ -281,8 +281,8 @@ public func verifyDLEQProofAlice(
     // Step 3: Verify e == hash(R1, R2, A, C')
     let computedE = try hashDLEQ(R1, R2, mintPublicKey, blindedSignature)
     
-    // Compare the computed e with the provided e
-    return computedE == eData
+    // Compare the computed e with the provided e using constant-time comparison
+    return SecureMemory.constantTimeCompare(computedE, eData)
 }
 
 // MARK: - DLEQ Proof Verification (Carol)

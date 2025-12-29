@@ -438,4 +438,178 @@ struct CryptographicTests {
         // Should complete in reasonable time
         #expect(duration < 1.0, "Secret generation took too long: \(duration) seconds")
     }
+    
+    // MARK: - Constant-Time Comparison Tests
+    
+    @Test
+    func constantTimeCompareEqual() async throws {
+        let data1 = Data([0x01, 0x02, 0x03, 0x04])
+        let data2 = Data([0x01, 0x02, 0x03, 0x04])
+        
+        #expect(SecureMemory.constantTimeCompare(data1, data2) == true)
+    }
+    
+    @Test
+    func constantTimeCompareNotEqual() async throws {
+        let data1 = Data([0x01, 0x02, 0x03, 0x04])
+        let data2 = Data([0x01, 0x02, 0x03, 0x05])
+        
+        #expect(SecureMemory.constantTimeCompare(data1, data2) == false)
+    }
+    
+    @Test
+    func constantTimeCompareDifferentLength() async throws {
+        let data1 = Data([0x01, 0x02, 0x03])
+        let data2 = Data([0x01, 0x02, 0x03, 0x04])
+        
+        #expect(SecureMemory.constantTimeCompare(data1, data2) == false)
+    }
+    
+    @Test
+    func constantTimeCompareEmptyData() async throws {
+        let data1 = Data()
+        let data2 = Data()
+        
+        #expect(SecureMemory.constantTimeCompare(data1, data2) == true)
+    }
+    
+    @Test
+    func constantTimeCompareByteArrays() async throws {
+        let arr1: [UInt8] = [0xAA, 0xBB, 0xCC, 0xDD]
+        let arr2: [UInt8] = [0xAA, 0xBB, 0xCC, 0xDD]
+        let arr3: [UInt8] = [0xAA, 0xBB, 0xCC, 0xDE]
+        
+        #expect(SecureMemory.constantTimeCompare(arr1, arr2) == true)
+        #expect(SecureMemory.constantTimeCompare(arr1, arr3) == false)
+    }
+    
+    @Test
+    func constantTimeCompareRandomData() async throws {
+        // Generate random data and verify comparison works correctly
+        let randomData1 = try SecureRandom.generateBytes(count: 32)
+        let randomData2 = try SecureRandom.generateBytes(count: 32)
+        
+        // Same data should compare equal
+        #expect(SecureMemory.constantTimeCompare(randomData1, randomData1) == true)
+        
+        // Different random data should (almost certainly) compare unequal
+        #expect(SecureMemory.constantTimeCompare(randomData1, randomData2) == false)
+    }
+    
+    // MARK: - Memory Zeroization Tests
+    
+    @Test
+    func wipeDataClearsContents() async throws {
+        var data = Data([0x01, 0x02, 0x03, 0x04, 0x05])
+        let originalCount = data.count
+        
+        SecureMemory.wipe(&data)
+        
+        // Data should be empty after wipe
+        #expect(data.isEmpty)
+        #expect(data.count == 0)
+        #expect(originalCount > 0) // Verify we had data before
+    }
+    
+    @Test
+    func wipeStringClearsContents() async throws {
+        var string = "sensitive secret mnemonic phrase"
+        let hadContent = !string.isEmpty
+        
+        SecureMemory.wipe(&string)
+        
+        // String should be empty after wipe
+        #expect(string.isEmpty)
+        #expect(hadContent) // Verify we had content before
+    }
+    
+    @Test
+    func wipeBytesArrayClearsContents() async throws {
+        var bytes: [UInt8] = [0xAA, 0xBB, 0xCC, 0xDD, 0xEE]
+        let originalCount = bytes.count
+        
+        SecureMemory.wipe(&bytes)
+        
+        // Array should be empty after wipe
+        #expect(bytes.isEmpty)
+        #expect(bytes.count == 0)
+        #expect(originalCount > 0)
+    }
+    
+    @Test
+    func withSecureDataExecutesAndWipes() async throws {
+        let sensitiveData = Data([0x01, 0x02, 0x03])
+        var capturedCount = 0
+        
+        let result = SecureMemory.withSecureData(sensitiveData) { data in
+            capturedCount = data.count
+            return data.count * 2
+        }
+        
+        #expect(result == 6)
+        #expect(capturedCount == 3)
+    }
+    
+    @Test
+    func withSecureStringExecutesAndWipes() async throws {
+        let sensitiveString = "secret"
+        var capturedLength = 0
+        
+        let result = SecureMemory.withSecureString(sensitiveString) { str in
+            capturedLength = str.count
+            return str.uppercased()
+        }
+        
+        #expect(result == "SECRET")
+        #expect(capturedLength == 6)
+    }
+    
+    @Test
+    func sensitiveDataWrapperProtectsData() async throws {
+        let sensitive = SensitiveData(Data([0x01, 0x02, 0x03]))
+        
+        #expect(sensitive.count == 3)
+        
+        var accessedData: Data?
+        sensitive.withData { data in
+            accessedData = data
+        }
+        
+        #expect(accessedData == Data([0x01, 0x02, 0x03]))
+    }
+    
+    @Test
+    func sensitiveStringWrapperProtectsString() async throws {
+        let sensitive = SensitiveString("secret phrase")
+        
+        #expect(sensitive.isEmpty == false)
+        
+        var accessedString: String?
+        sensitive.withString { str in
+            accessedString = str
+        }
+        
+        #expect(accessedString == "secret phrase")
+    }
+    
+    @Test
+    func wipeEmptyDataDoesNotCrash() async throws {
+        var emptyData = Data()
+        SecureMemory.wipe(&emptyData)
+        #expect(emptyData.isEmpty)
+    }
+    
+    @Test
+    func wipeEmptyStringDoesNotCrash() async throws {
+        var emptyString = ""
+        SecureMemory.wipe(&emptyString)
+        #expect(emptyString.isEmpty)
+    }
+    
+    @Test
+    func wipeEmptyBytesDoesNotCrash() async throws {
+        var emptyBytes: [UInt8] = []
+        SecureMemory.wipe(&emptyBytes)
+        #expect(emptyBytes.isEmpty)
+    }
 }

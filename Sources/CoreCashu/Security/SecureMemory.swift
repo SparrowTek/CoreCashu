@@ -102,6 +102,51 @@ private extension SecureMemory {
     }
 }
 
+// MARK: - Constant-Time Comparison
+
+extension SecureMemory {
+    /// Constant-time comparison of two Data objects to prevent timing attacks.
+    /// Returns true if both Data objects have the same length and contents.
+    /// This function runs in time proportional to the length of the inputs,
+    /// regardless of where (or if) the first difference occurs.
+    ///
+    /// - Parameters:
+    ///   - lhs: First data to compare
+    ///   - rhs: Second data to compare
+    /// - Returns: true if equal, false otherwise
+    public static func constantTimeCompare(_ lhs: Data, _ rhs: Data) -> Bool {
+        guard lhs.count == rhs.count else {
+            return false
+        }
+        
+        // XOR all bytes and OR the results. If any byte differs, result will be non-zero.
+        var result: UInt8 = 0
+        for (l, r) in zip(lhs, rhs) {
+            result |= l ^ r
+        }
+        
+        return result == 0
+    }
+    
+    /// Constant-time comparison of two byte arrays to prevent timing attacks.
+    /// - Parameters:
+    ///   - lhs: First array to compare
+    ///   - rhs: Second array to compare
+    /// - Returns: true if equal, false otherwise
+    public static func constantTimeCompare(_ lhs: [UInt8], _ rhs: [UInt8]) -> Bool {
+        guard lhs.count == rhs.count else {
+            return false
+        }
+        
+        var result: UInt8 = 0
+        for (l, r) in zip(lhs, rhs) {
+            result |= l ^ r
+        }
+        
+        return result == 0
+    }
+}
+
 /// A wrapper for sensitive data that automatically wipes on deinitialization
 public final class SensitiveData: @unchecked Sendable {
     private var data: Data

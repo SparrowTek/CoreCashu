@@ -136,9 +136,14 @@ public struct HTLCVerifier: Sendable {
         }
         
         let hash = SHA256.hash(data: preimageData)
-        let hashHex = Data(hash).hexString
+        let computedHash = Data(hash)
         
-        return hashHex == hashLock.lowercased()
+        // Compare using constant-time comparison for defense in depth
+        guard let lockData = Data(hexString: hashLock.lowercased()) else {
+            return false
+        }
+        
+        return SecureMemory.constantTimeCompare(computedHash, lockData)
     }
     
     /// Verify signatures for authorized public keys

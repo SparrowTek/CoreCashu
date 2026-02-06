@@ -189,10 +189,14 @@ public protocol LoggerProtocol: Sendable {
 
 // WebSocket protocol for real-time communication
 public protocol WebSocketClientProtocol: Sendable {
-    func connect() async throws
+    var isConnected: Bool { get async }
+    func connect(to url: URL) async throws
+    func send(text: String) async throws
+    func send(data: Data) async throws
+    func receive() async throws -> WebSocketMessage
+    func ping() async throws
+    func close(code: WebSocketCloseCode, reason: Data?) async throws
     func disconnect() async
-    func send(_ message: String) async throws
-    func receive() async throws -> String
 }
 ```
 
@@ -232,6 +236,16 @@ let restoredWallet = try await CashuWallet(
     configuration: config,
     mnemonic: savedMnemonic
 )
+```
+
+For deterministic test scenarios, prefer scoped RNG overrides:
+
+```swift
+let mnemonic = try SecureRandom.withGenerator({ count in
+    Data(repeating: 0, count: count)
+}) {
+    try CashuWallet.generateMnemonic(strength: 128)
+}
 ```
 
 ### Spending Conditions (NUT-10/11)

@@ -246,9 +246,7 @@ struct BIP39ValidationTests {
     func validationCaseInsensitive() throws {
         let mnemonic = try BIP39.generateMnemonic()
         
-        let uppercase = mnemonic.uppercased()
         let lowercase = mnemonic.lowercased()
-        let mixed = mnemonic.prefix(mnemonic.count / 2).uppercased() + mnemonic.suffix(mnemonic.count / 2).lowercased()
         
         // At least lowercase should work (spec says lowercase)
         #expect(BIP39.validateMnemonic(lowercase))
@@ -399,7 +397,7 @@ struct BIP39DeterministicTests {
     
     @Test("Incremental entropy produces different mnemonics")
     func incrementalEntropyDifferent() throws {
-        var entropy1 = Data(repeating: 0x00, count: 16)
+        let entropy1 = Data(repeating: 0x00, count: 16)
         var entropy2 = Data(repeating: 0x00, count: 16)
         entropy2[15] = 0x01 // Only last byte different
         

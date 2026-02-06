@@ -68,12 +68,12 @@ struct TokenSerializationFuzzTests {
 
     @Test("Fuzz test token deserialization with random data")
     func fuzzTokenDeserialization() throws {
-        var crashCount = 0
+        let crashCount = 0
         var errorCount = 0
         var successCount = 0
 
         // Test with random binary data
-        for i in 0..<1000 {
+        for _ in 0..<1000 {
             let randomData = generateRandomBytes(length: Int.random(in: 1...1000))
             let randomString = String(data: randomData, encoding: .utf8) ?? ""
 
@@ -93,7 +93,7 @@ struct TokenSerializationFuzzTests {
     @Test("Fuzz test token parsing with malformed JSON")
     func fuzzTokenJSONParsing() throws {
         let malformedInputs = generateMalformedJSON()
-        var crashCount = 0
+        let crashCount = 0
         var errorCount = 0
 
         for input in malformedInputs {
@@ -298,7 +298,7 @@ struct TokenSerializationFuzzTests {
             { (s: String) -> String in s.replacingOccurrences(of: "/", with: "_") },
         ]
 
-        for (i, mutation) in mutations.enumerated() {
+        for mutation in mutations {
             let mutated = mutation(validSerialized)
             do {
                 let _ = try CashuTokenUtils.deserializeToken(mutated)

@@ -134,7 +134,7 @@ struct NUT00Tests {
             
             // Create mint with the specific private key
             let mintKey = try P256K.KeyAgreement.PrivateKey(dataRepresentation: mintPrivateKeyData)
-            let mint = try Mint(privateKey: mintKey)
+            let mint = Mint(privateKey: mintKey)
             
             // Sign the blinded message
             let C_Data = try mint.signBlindedMessage(blindedMessageData)

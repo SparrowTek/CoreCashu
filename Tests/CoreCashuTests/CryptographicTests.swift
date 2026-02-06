@@ -140,7 +140,7 @@ struct CryptographicTests {
             return
         }
         let mintPrivateKey = try P256K.KeyAgreement.PrivateKey(dataRepresentation: mintKeyData)
-        let mint = try Mint(privateKey: mintPrivateKey)
+        let mint = Mint(privateKey: mintPrivateKey)
 
         let secrets = [
             "vector-alpha",

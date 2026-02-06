@@ -313,7 +313,7 @@ struct HTLCIntegrationTests {
 
     private func setupMockProofs(wallet: CashuWallet, amount: Int) async {
         // Create mock proofs for the wallet
-        let proof = Proof(
+        let _ = Proof(
             amount: amount,
             id: "test_keyset",
             secret: "test_secret",

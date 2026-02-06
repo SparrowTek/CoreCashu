@@ -58,7 +58,7 @@ struct NUT13Tests {
     
     @Test("Keyset ID to integer conversion")
     func testKeysetIDToInt() throws {
-        let derivation = try DeterministicSecretDerivation(masterKey: Data(repeating: 0, count: 64))
+        let derivation = DeterministicSecretDerivation(masterKey: Data(repeating: 0, count: 64))
         
         // Test case from spec
         let keysetID = "009a1f293253e41e"
@@ -185,7 +185,7 @@ struct NUT13Tests {
     
     @Test("Deterministic path derivation")
     func testDeterministicPaths() throws {
-        let derivation = try DeterministicSecretDerivation(masterKey: Data(repeating: 0, count: 64))
+        let derivation = DeterministicSecretDerivation(masterKey: Data(repeating: 0, count: 64))
         
         let keysetID = "009a1f293253e41e"
         let counter: UInt32 = 5
@@ -268,15 +268,13 @@ struct NUT13Tests {
         let keysetID = "009a1f293253e41e"
         let expectedKeysetInt: UInt32 = 864559728
         
-        let derivation = try DeterministicSecretDerivation(masterKey: Data(repeating: 0, count: 64))
+        let derivation = DeterministicSecretDerivation(masterKey: Data(repeating: 0, count: 64))
         let keysetInt = try derivation.keysetIDToInt(keysetID)
         
         #expect(keysetInt == expectedKeysetInt, "Keyset ID integer should match expected value from test vector")
         
-        // Also verify the derivation path format for counter=0
-        let expectedPath = "m/129372'/0'/864559728'/0'"
-        // The actual path would be [129372 | 0x80000000, 0 | 0x80000000, 864559728 | 0x80000000, 0 | 0x80000000]
-        // which corresponds to the expected derivation path
+        // Expected derivation path components for counter=0:
+        // [129372 | 0x80000000, 0 | 0x80000000, 864559728 | 0x80000000, 0 | 0x80000000]
     }
     
     @Test("Test vector: Secret derivation")
@@ -428,7 +426,7 @@ struct NUT13Tests {
     
     @Test("Keyset ID to integer edge cases")
     func testKeysetIDToIntEdgeCases() throws {
-        let derivation = try DeterministicSecretDerivation(masterKey: Data(repeating: 0, count: 64))
+        let derivation = DeterministicSecretDerivation(masterKey: Data(repeating: 0, count: 64))
         
         // Test the official test vector keyset ID
         let keysetID = "009a1f293253e41e"

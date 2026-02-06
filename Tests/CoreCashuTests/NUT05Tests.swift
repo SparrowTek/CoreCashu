@@ -478,10 +478,11 @@ struct NUT05Tests {
         let quoteRequest = PostMeltQuoteRequest(request: "lnbc1000n1p...", unit: "sat")
         let proof = Proof(amount: 1024, id: "keyset123", secret: "secret", C: "signature")
         let meltRequest = PostMeltRequest(quote: "quote123", inputs: [proof])
+        let baseURL = URL(string: "https://mint.example.com")!
         
-        let requestQuoteEndpoint = MeltAPI.requestMeltQuote("bolt11", quoteRequest)
-        let checkQuoteEndpoint = MeltAPI.checkMeltQuote("bolt11", "quote123")
-        let executeMeltEndpoint = MeltAPI.executeMelt("bolt11", meltRequest)
+        let requestQuoteEndpoint = MeltAPI.requestMeltQuote("bolt11", quoteRequest, baseURL: baseURL)
+        let checkQuoteEndpoint = MeltAPI.checkMeltQuote("bolt11", "quote123", baseURL: baseURL)
+        let executeMeltEndpoint = MeltAPI.executeMelt("bolt11", meltRequest, baseURL: baseURL)
         
         // These would normally be tested with actual network setup
         // For now, just verify the endpoints exist and can be created

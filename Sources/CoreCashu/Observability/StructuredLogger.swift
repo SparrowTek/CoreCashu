@@ -70,7 +70,7 @@ public final class StructuredLogger: LoggerProtocol, @unchecked Sendable {
 
     public func debug(
         _ message: @autoclosure () -> String,
-        metadata: [String: any Sendable]?,
+        metadata: [String: Any]?,
         file: String,
         function: String,
         line: UInt
@@ -80,7 +80,7 @@ public final class StructuredLogger: LoggerProtocol, @unchecked Sendable {
 
     public func info(
         _ message: @autoclosure () -> String,
-        metadata: [String: any Sendable]?,
+        metadata: [String: Any]?,
         file: String,
         function: String,
         line: UInt
@@ -90,7 +90,7 @@ public final class StructuredLogger: LoggerProtocol, @unchecked Sendable {
 
     public func warning(
         _ message: @autoclosure () -> String,
-        metadata: [String: any Sendable]?,
+        metadata: [String: Any]?,
         file: String,
         function: String,
         line: UInt
@@ -100,7 +100,7 @@ public final class StructuredLogger: LoggerProtocol, @unchecked Sendable {
 
     public func error(
         _ message: @autoclosure () -> String,
-        metadata: [String: any Sendable]?,
+        metadata: [String: Any]?,
         file: String,
         function: String,
         line: UInt
@@ -110,7 +110,7 @@ public final class StructuredLogger: LoggerProtocol, @unchecked Sendable {
 
     public func critical(
         _ message: @autoclosure () -> String,
-        metadata: [String: any Sendable]?,
+        metadata: [String: Any]?,
         file: String,
         function: String,
         line: UInt
@@ -123,24 +123,24 @@ public final class StructuredLogger: LoggerProtocol, @unchecked Sendable {
     private func log(
         level: LogLevel,
         _ message: String,
-        metadata: [String: any Sendable]?,
+        metadata: [String: Any]?,
         file: String,
         function: String,
         line: UInt
     ) {
         guard level >= minimumLevel else { return }
 
-        logQueue.async(flags: .barrier) {
-            let logEntry = self.createLogEntry(
-                level: level,
-                message: message,
-                metadata: metadata,
-                file: file,
-                function: function,
-                line: line
-            )
+        let logEntry = createLogEntry(
+            level: level,
+            message: message,
+            metadata: metadata,
+            file: file,
+            function: function,
+            line: line
+        )
+        let formattedLog = formatLogEntry(logEntry)
 
-            let formattedLog = self.formatLogEntry(logEntry)
+        logQueue.async(flags: .barrier) {
             self.writeLog(formattedLog)
         }
     }
@@ -171,7 +171,7 @@ public final class StructuredLogger: LoggerProtocol, @unchecked Sendable {
             "source": [
                 "file": filename,
                 "function": function,
-                "line": line
+                "line": Int(line)
             ]
         ]
 
@@ -182,7 +182,7 @@ public final class StructuredLogger: LoggerProtocol, @unchecked Sendable {
 
         // Add process information
         entry["process"] = [
-            "pid": ProcessInfo.processInfo.processIdentifier,
+            "pid": Int(ProcessInfo.processInfo.processIdentifier),
             "name": ProcessInfo.processInfo.processName
         ]
 
@@ -195,13 +195,13 @@ public final class StructuredLogger: LoggerProtocol, @unchecked Sendable {
         // Merge static metadata
         for (key, value) in staticMetadata {
             if entry[key] == nil {
-                entry[key] = value
+                entry[key] = makeJSONSafe(value)
             }
         }
 
         // Add dynamic metadata
         if let metadata = finalMetadata {
-            entry["metadata"] = metadata
+            entry["metadata"] = makeJSONSafe(metadata)
         }
 
         // Add stack trace for errors if enabled
@@ -255,6 +255,55 @@ public final class StructuredLogger: LoggerProtocol, @unchecked Sendable {
             return "\"\(jsonString.replacingOccurrences(of: "\"", with: "\\\""))\""
         }
         return String(describing: value)
+    }
+
+    private func makeJSONSafe(_ value: Any) -> Any {
+        switch value {
+        case let string as String:
+            return string
+        case let bool as Bool:
+            return bool
+        case let int as Int:
+            return int
+        case let int8 as Int8:
+            return Int(int8)
+        case let int16 as Int16:
+            return Int(int16)
+        case let int32 as Int32:
+            return Int(int32)
+        case let int64 as Int64:
+            return int64
+        case let uint as UInt:
+            return uint <= UInt(Int.max) ? Int(uint) : String(uint)
+        case let uint8 as UInt8:
+            return Int(uint8)
+        case let uint16 as UInt16:
+            return Int(uint16)
+        case let uint32 as UInt32:
+            return uint32
+        case let uint64 as UInt64:
+            return uint64 <= UInt64(Int.max) ? Int(uint64) : String(uint64)
+        case let double as Double:
+            return double
+        case let float as Float:
+            return Double(float)
+        case let number as NSNumber:
+            return number
+        case let date as Date:
+            return formatISO8601Date(date)
+        case let url as URL:
+            return url.absoluteString
+        case let array as [Any]:
+            return array.map { makeJSONSafe($0) }
+        case let dictionary as [String: Any]:
+            var sanitized: [String: Any] = [:]
+            for (key, nestedValue) in dictionary {
+                sanitized[key] = makeJSONSafe(nestedValue)
+            }
+            return sanitized
+        default:
+            return String(describing: value)
+        }
     }
 
     private func writeLog(_ log: String) {

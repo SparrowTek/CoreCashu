@@ -381,10 +381,12 @@ public struct MeltService: Sendable {
         
         // Setup networking
         let normalizedURL = try ValidationUtils.normalizeMintURL(mintURL)
-        CashuEnvironment.current.setup(baseURL: normalizedURL)
+        guard let baseURL = URL(string: normalizedURL) else {
+            throw CashuError.invalidMintURL
+        }
         
         // Request quote
-        return try await router.execute(.requestMeltQuote(method.rawValue, quoteRequest))
+        return try await router.execute(.requestMeltQuote(method.rawValue, quoteRequest, baseURL: baseURL))
     }
     
     /// Request a melt quote with MPP support (NUT-15)
@@ -413,10 +415,12 @@ public struct MeltService: Sendable {
         
         // Setup networking
         let normalizedURL = try ValidationUtils.normalizeMintURL(mintURL)
-        CashuEnvironment.current.setup(baseURL: normalizedURL)
+        guard let baseURL = URL(string: normalizedURL) else {
+            throw CashuError.invalidMintURL
+        }
         
         // Request quote with MPP
-        return try await router.execute(.requestMeltQuoteWithMPP("bolt11", quoteRequest))
+        return try await router.execute(.requestMeltQuoteWithMPP("bolt11", quoteRequest, baseURL: baseURL))
     }
     
     /// Check the state of a melt quote
@@ -432,9 +436,11 @@ public struct MeltService: Sendable {
     ) async throws -> PostMeltQuoteResponse {
         // Setup networking
         let normalizedURL = try ValidationUtils.normalizeMintURL(mintURL)
-        CashuEnvironment.current.setup(baseURL: normalizedURL)
+        guard let baseURL = URL(string: normalizedURL) else {
+            throw CashuError.invalidMintURL
+        }
         
-        return try await router.execute(.checkMeltQuote(method.rawValue, quoteID))
+        return try await router.execute(.checkMeltQuote(method.rawValue, quoteID, baseURL: baseURL))
     }
     
     /// Execute a melt operation
@@ -468,10 +474,12 @@ public struct MeltService: Sendable {
         
         // Setup networking
         let normalizedURL = try ValidationUtils.normalizeMintURL(mintURL)
-        CashuEnvironment.current.setup(baseURL: normalizedURL)
+        guard let baseURL = URL(string: normalizedURL) else {
+            throw CashuError.invalidMintURL
+        }
         
         // Execute melt (this may block for external payments)
-        return try await router.execute(.executeMelt(method.rawValue, request))
+        return try await router.execute(.executeMelt(method.rawValue, request, baseURL: baseURL))
     }
     
     /// Prepare a melt operation by selecting optimal proofs and creating change outputs
@@ -1019,28 +1027,33 @@ public struct MeltService: Sendable {
 // MARK: - API Endpoints
 
 enum MeltAPI {
-    case requestMeltQuote(String, PostMeltQuoteRequest)
-    case requestMeltQuoteWithMPP(String, PostMeltQuoteBolt11Request)  // NUT-15 support
-    case checkMeltQuote(String, String)
-    case executeMelt(String, PostMeltRequest)
+    case requestMeltQuote(String, PostMeltQuoteRequest, baseURL: URL)
+    case requestMeltQuoteWithMPP(String, PostMeltQuoteBolt11Request, baseURL: URL)  // NUT-15 support
+    case checkMeltQuote(String, String, baseURL: URL)
+    case executeMelt(String, PostMeltRequest, baseURL: URL)
 }
 
 extension MeltAPI: EndpointType {
     public var baseURL: URL {
-        guard let baseURL = CashuEnvironment.current.baseURL,
-              let url = URL(string: baseURL) else {
-            fatalError("The baseURL for the mint must be set")
+        switch self {
+        case .requestMeltQuote(_, _, let baseURL):
+            return baseURL
+        case .requestMeltQuoteWithMPP(_, _, let baseURL):
+            return baseURL
+        case .checkMeltQuote(_, _, let baseURL):
+            return baseURL
+        case .executeMelt(_, _, let baseURL):
+            return baseURL
         }
-        return url
     }
     
     var path: String {
         switch self {
-        case .requestMeltQuote(let method, _), .requestMeltQuoteWithMPP(let method, _):
+        case .requestMeltQuote(let method, _, _), .requestMeltQuoteWithMPP(let method, _, _):
             return "/v1/melt/quote/\(method)"
-        case .checkMeltQuote(let method, let quoteID):
+        case .checkMeltQuote(let method, let quoteID, _):
             return "/v1/melt/quote/\(method)/\(quoteID)"
-        case .executeMelt(let method, _):
+        case .executeMelt(let method, _, _):
             return "/v1/melt/\(method)"
         }
     }
@@ -1056,13 +1069,13 @@ extension MeltAPI: EndpointType {
     
     var task: HTTPTask {
         switch self {
-        case .requestMeltQuote(_, let request):
+        case .requestMeltQuote(_, let request, _):
             return .requestParameters(encoding: .jsonEncodableEncoding(encodable: request))
-        case .requestMeltQuoteWithMPP(_, let request):
+        case .requestMeltQuoteWithMPP(_, let request, _):
             return .requestParameters(encoding: .jsonEncodableEncoding(encodable: request))
         case .checkMeltQuote:
             return .request
-        case .executeMelt(_, let request):
+        case .executeMelt(_, let request, _):
             return .requestParameters(encoding: .jsonEncodableEncoding(encodable: request))
         }
     }

@@ -69,7 +69,22 @@ public struct MintQuoteResponse: CashuCodabale {
     
     /// Check if quote is paid
     public var isPaid: Bool {
-        return paid ?? false
+        if paid == true {
+            return true
+        }
+        guard let state else {
+            return false
+        }
+        let normalizedState = state.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        return normalizedState == "PAID" || normalizedState == "ISSUED"
+    }
+
+    /// Check if quote was already issued
+    public var isIssued: Bool {
+        guard let state else {
+            return false
+        }
+        return state.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() == "ISSUED"
     }
     
     /// Check if quote is expired
@@ -80,7 +95,8 @@ public struct MintQuoteResponse: CashuCodabale {
     
     /// Check if quote is in valid state for minting
     public var canMint: Bool {
-        return isPaid && !isExpired && state != "EXPIRED"
+        let normalizedState = state?.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        return isPaid && !isIssued && !isExpired && normalizedState != "EXPIRED"
     }
 }
 
@@ -305,9 +321,11 @@ public struct MintService: Sendable {
         }
         
         let normalizedURL = try ValidationUtils.normalizeMintURL(mintURL)
-        CashuEnvironment.current.setup(baseURL: normalizedURL)
+        guard let baseURL = URL(string: normalizedURL) else {
+            throw CashuError.invalidMintURL
+        }
         
-        return try await router.execute(.mintQuote(method: method, request: request))
+        return try await router.execute(.mintQuote(method: method, request: request, baseURL: baseURL))
     }
     
     /// Check mint quote state
@@ -318,9 +336,11 @@ public struct MintService: Sendable {
     /// - returns: MintQuoteResponse with current state
     public func checkMintQuote(_ quoteID: String, method: String, at mintURL: String) async throws -> MintQuoteResponse {
         let normalizedURL = try ValidationUtils.normalizeMintURL(mintURL)
-        CashuEnvironment.current.setup(baseURL: normalizedURL)
+        guard let baseURL = URL(string: normalizedURL) else {
+            throw CashuError.invalidMintURL
+        }
         
-        return try await router.execute(.checkMintQuote(method: method, quoteID: quoteID))
+        return try await router.execute(.checkMintQuote(method: method, quoteID: quoteID, baseURL: baseURL))
     }
     
     /// Execute mint operation
@@ -348,9 +368,11 @@ public struct MintService: Sendable {
         }
         
         let normalizedURL = try ValidationUtils.normalizeMintURL(mintURL)
-        CashuEnvironment.current.setup(baseURL: normalizedURL)
+        guard let baseURL = URL(string: normalizedURL) else {
+            throw CashuError.invalidMintURL
+        }
         
-        return try await router.execute(.mint(method: method, request: request))
+        return try await router.execute(.mint(method: method, request: request, baseURL: baseURL))
     }
     
     /// Prepare mint operation (create blinded messages)
@@ -501,9 +523,26 @@ public struct MintService: Sendable {
     ) async throws -> (quote: MintQuoteResponse, result: MintResult) {
         let quoteRequest = MintQuoteRequest(unit: unit, amount: amount)
         let quoteResponse = try await requestMintQuote(quoteRequest, method: method, at: mintURL)
+
+        let readyQuote: MintQuoteResponse
+        if quoteResponse.canMint {
+            readyQuote = quoteResponse
+        } else {
+            let refreshedQuote = try await checkMintQuote(quoteResponse.quote, method: method, at: mintURL)
+            if refreshedQuote.isExpired {
+                throw CashuError.quoteExpired
+            }
+            if refreshedQuote.isIssued {
+                throw CashuError.invalidState("Mint quote is already issued")
+            }
+            guard refreshedQuote.canMint else {
+                throw CashuError.quotePending
+            }
+            readyQuote = refreshedQuote
+        }
         
         let preparation = try await prepareMint(
-            quote: quoteResponse.quote,
+            quote: readyQuote.quote,
             amount: amount,
             method: method,
             unit: unit,
@@ -512,7 +551,7 @@ public struct MintService: Sendable {
         
         let result = try await executeCompleteMint(preparation: preparation, method: method, at: mintURL)
         
-        return (quoteResponse, result)
+        return (readyQuote, result)
     }
     
     // MARK: - Utility Methods
@@ -561,27 +600,30 @@ public struct MintService: Sendable {
 // MARK: - API Endpoints
 
 enum MintAPI {
-    case mintQuote(method: String, request: MintQuoteRequest)
-    case checkMintQuote(method: String, quoteID: String)
-    case mint(method: String, request: MintRequest)
+    case mintQuote(method: String, request: MintQuoteRequest, baseURL: URL)
+    case checkMintQuote(method: String, quoteID: String, baseURL: URL)
+    case mint(method: String, request: MintRequest, baseURL: URL)
 }
 
 extension MintAPI: EndpointType {
     public var baseURL: URL {
-        guard let baseURL = CashuEnvironment.current.baseURL,
-              let url = URL(string: baseURL) else {
-            fatalError("The baseURL for the mint must be set")
+        switch self {
+        case .mintQuote(_, _, let baseURL):
+            return baseURL
+        case .checkMintQuote(_, _, let baseURL):
+            return baseURL
+        case .mint(_, _, let baseURL):
+            return baseURL
         }
-        return url
     }
     
     var path: String {
         switch self {
-        case .mintQuote(let method, _):
+        case .mintQuote(let method, _, _):
             return "/v1/mint/quote/\(method)"
-        case .checkMintQuote(let method, let quoteID):
+        case .checkMintQuote(let method, let quoteID, _):
             return "/v1/mint/quote/\(method)/\(quoteID)"
-        case .mint(let method, _):
+        case .mint(let method, _, _):
             return "/v1/mint/\(method)"
         }
     }
@@ -597,11 +639,11 @@ extension MintAPI: EndpointType {
     
     var task: HTTPTask {
         switch self {
-        case .mintQuote(_, let request):
+        case .mintQuote(_, let request, _):
             return .requestParameters(encoding: .jsonEncodableEncoding(encodable: request))
         case .checkMintQuote:
             return .request
-        case .mint(_, let request):
+        case .mint(_, let request, _):
             return .requestParameters(encoding: .jsonEncodableEncoding(encodable: request))
         }
     }
@@ -653,5 +695,32 @@ extension MintService {
     ) async throws -> Bool {
         let quote = try await checkMintQuote(quoteID, method: method, at: mintURL)
         return quote.canMint
+    }
+
+    /// Wait for quote to become mintable by polling.
+    public func waitForQuotePayment(
+        quoteID: String,
+        method: String = "bolt11",
+        at mintURL: String,
+        timeout: TimeInterval = 300,
+        pollInterval: TimeInterval = 2
+    ) async throws -> MintQuoteResponse {
+        let startTime = Date()
+
+        while Date().timeIntervalSince(startTime) < timeout {
+            let quote = try await checkMintQuote(quoteID, method: method, at: mintURL)
+            if quote.isExpired {
+                throw CashuError.quoteExpired
+            }
+            if quote.isIssued {
+                throw CashuError.invalidState("Mint quote is already issued")
+            }
+            if quote.canMint {
+                return quote
+            }
+            try await Task.sleep(nanoseconds: UInt64(pollInterval * 1_000_000_000))
+        }
+
+        throw CashuError.operationTimeout
     }
 }

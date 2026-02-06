@@ -46,12 +46,12 @@ struct NUT13Tests {
 
     @Test("Deterministic mnemonic generation via entropy override")
     func testDeterministicMnemonicGeneration() throws {
-        SecureRandom.installGenerator { count in
+        let mnemonic = try SecureRandom.withGenerator({ count in
             Data(repeating: 0x00, count: count)
+        }) {
+            try CashuWallet.generateMnemonic(strength: 128)
         }
-        defer { SecureRandom.resetGenerator() }
-        
-        let mnemonic = try CashuWallet.generateMnemonic(strength: 128)
+
         let expected = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
         #expect(mnemonic == expected)
     }

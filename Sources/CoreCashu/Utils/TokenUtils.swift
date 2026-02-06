@@ -35,6 +35,9 @@ public struct CashuTokenUtils {
     private static let versionV3: Character = "A"
     private static let versionV4: Character = "B"
     private static let uriScheme = "cashu:"
+    private static let maxSerializedV4Bytes = 128 * 1024
+    private static let maxCBORItemCount = 50_000
+    private static let maxCBORDepth = 64
     
     // MARK: - V3 Token Serialization (Deprecated but supported)
     
@@ -193,6 +196,8 @@ public struct CashuTokenUtils {
         guard let cborData = Data(base64Encoded: base64) else {
             throw CashuError.invalidTokenFormat
         }
+
+        try validateSafeCBORTokenData(cborData)
         
         // Decode CBOR
         let tokenV4: TokenV4 = try decodeFromCBOR(cborData)
@@ -258,6 +263,159 @@ public struct CashuTokenUtils {
         case versionV4:
             return try deserializeTokenV4(serializedToken)
         default:
+            throw CashuError.invalidTokenFormat
+        }
+    }
+
+    // MARK: - CBOR Safety Validation
+
+    /// Lightweight structural validation to reject malformed CBOR that can trigger huge allocations.
+    private static func validateSafeCBORTokenData(_ data: Data) throws {
+        guard !data.isEmpty, data.count <= maxSerializedV4Bytes else {
+            throw CashuError.invalidTokenFormat
+        }
+
+        var index = 0
+        var remainingItemsBudget = maxCBORItemCount
+
+        func consume(_ count: Int) throws {
+            guard count >= 0, index <= data.count - count else {
+                throw CashuError.invalidTokenFormat
+            }
+            index += count
+        }
+
+        func readByte() throws -> UInt8 {
+            guard index < data.count else {
+                throw CashuError.invalidTokenFormat
+            }
+            let byte = data[index]
+            index += 1
+            return byte
+        }
+
+        func readUInt(byteCount: Int) throws -> UInt64 {
+            guard byteCount > 0, index <= data.count - byteCount else {
+                throw CashuError.invalidTokenFormat
+            }
+
+            var value: UInt64 = 0
+            for _ in 0..<byteCount {
+                value = (value << 8) | UInt64(data[index])
+                index += 1
+            }
+            return value
+        }
+
+        func readLength(additionalInfo: UInt8) throws -> Int {
+            let value: UInt64
+            switch additionalInfo {
+            case 0...23:
+                value = UInt64(additionalInfo)
+            case 24:
+                value = try readUInt(byteCount: 1)
+            case 25:
+                value = try readUInt(byteCount: 2)
+            case 26:
+                value = try readUInt(byteCount: 4)
+            case 27:
+                value = try readUInt(byteCount: 8)
+            default:
+                throw CashuError.invalidTokenFormat
+            }
+
+            guard value <= UInt64(Int.max) else {
+                throw CashuError.invalidTokenFormat
+            }
+            return Int(value)
+        }
+
+        func parseItem(depth: Int) throws {
+            guard depth <= maxCBORDepth else {
+                throw CashuError.invalidTokenFormat
+            }
+
+            remainingItemsBudget -= 1
+            guard remainingItemsBudget >= 0 else {
+                throw CashuError.invalidTokenFormat
+            }
+
+            let initialByte = try readByte()
+            let majorType = initialByte >> 5
+            let additionalInfo = initialByte & 0x1f
+
+            switch majorType {
+            case 0, 1:
+                if additionalInfo >= 24 && additionalInfo <= 27 {
+                    _ = try readLength(additionalInfo: additionalInfo)
+                } else if additionalInfo == 31 {
+                    throw CashuError.invalidTokenFormat
+                }
+
+            case 2, 3:
+                guard additionalInfo != 31 else {
+                    throw CashuError.invalidTokenFormat
+                }
+                let length = try readLength(additionalInfo: additionalInfo)
+                try consume(length)
+
+            case 4:
+                guard additionalInfo != 31 else {
+                    throw CashuError.invalidTokenFormat
+                }
+                let count = try readLength(additionalInfo: additionalInfo)
+                guard count <= maxCBORItemCount else {
+                    throw CashuError.invalidTokenFormat
+                }
+                for _ in 0..<count {
+                    try parseItem(depth: depth + 1)
+                }
+
+            case 5:
+                guard additionalInfo != 31 else {
+                    throw CashuError.invalidTokenFormat
+                }
+                let pairCount = try readLength(additionalInfo: additionalInfo)
+                guard pairCount <= maxCBORItemCount / 2 else {
+                    throw CashuError.invalidTokenFormat
+                }
+                for _ in 0..<pairCount {
+                    try parseItem(depth: depth + 1)
+                    try parseItem(depth: depth + 1)
+                }
+
+            case 6:
+                if additionalInfo >= 24 && additionalInfo <= 27 {
+                    _ = try readLength(additionalInfo: additionalInfo)
+                } else if additionalInfo == 31 {
+                    throw CashuError.invalidTokenFormat
+                }
+                try parseItem(depth: depth + 1)
+
+            case 7:
+                switch additionalInfo {
+                case 0...23:
+                    break
+                case 24:
+                    try consume(1)
+                case 25:
+                    try consume(2)
+                case 26:
+                    try consume(4)
+                case 27:
+                    try consume(8)
+                default:
+                    throw CashuError.invalidTokenFormat
+                }
+
+            default:
+                throw CashuError.invalidTokenFormat
+            }
+        }
+
+        try parseItem(depth: 0)
+
+        guard index == data.count else {
             throw CashuError.invalidTokenFormat
         }
     }

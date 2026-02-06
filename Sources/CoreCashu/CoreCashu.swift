@@ -4,8 +4,9 @@
 
 @CashuActor
 public struct CoreCashu {
+    @available(*, deprecated, message: "Global baseURL setup is no longer used. Configure mint URLs per-wallet via WalletConfiguration.")
     public static func setup(baseURL: String) {
-        CashuEnvironment.current.setup(baseURL: baseURL)
+        _ = baseURL
     }
     
     /// Create a new Cashu wallet

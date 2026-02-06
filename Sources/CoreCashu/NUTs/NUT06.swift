@@ -133,15 +133,51 @@ public struct MintInfo: CashuCodabale, Sendable {
         self.time = time
         self.tosURL = tosURL
     }
+
+    private func nutKeyCandidates(for nut: String) -> [String] {
+        let trimmed = nut.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [] }
+
+        let upper = trimmed.uppercased()
+        let numericPart: String = {
+            if upper.hasPrefix("NUT-") {
+                return String(upper.dropFirst(4))
+            }
+            return upper
+        }()
+
+        let normalizedInt = Int(numericPart) ?? Int(numericPart.trimmingCharacters(in: CharacterSet(charactersIn: "0")))
+        guard let nutInt = normalizedInt else {
+            return [trimmed, upper]
+        }
+
+        let canonical = String(format: "%02d", nutInt)
+        let short = String(nutInt)
+        return [
+            short,
+            canonical,
+            "NUT-\(canonical)",
+            trimmed,
+            upper
+        ]
+    }
+
+    private func valueForNUT(_ nut: String) -> NutValue? {
+        guard let nuts else { return nil }
+        for key in nutKeyCandidates(for: nut) where nuts[key] != nil {
+            return nuts[key]
+        }
+        return nil
+    }
     
     /// Check if this mint supports a specific NUT
     public func supportsNUT(_ nut: String) -> Bool {
-        return nuts?[nut] != nil
+        return valueForNUT(nut) != nil
     }
     
     /// Get the version of a specific NUT if supported
     public func getNUTVersion(_ nut: String) -> String? {
-        nuts?[nut]?.stringValue
+        valueForNUT(nut)?.stringValue
     }
     
     /// Get all supported NUTs
@@ -149,15 +185,19 @@ public struct MintInfo: CashuCodabale, Sendable {
         return nuts?.keys.sorted() ?? []
     }
     
-    /// Check if mint supports basic operations (NUT-00, NUT-01, NUT-02)
+    /// Check if mint supports basic wallet operations.
+    /// NUT-06 responses in the wild commonly advertise NUT-04/NUT-05 while omitting mandatory
+    /// base NUT entries from the `nuts` dictionary.
     public func supportsBasicOperations() -> Bool {
-        let basicNUTs = ["NUT-00", "NUT-01", "NUT-02"]
-        return basicNUTs.allSatisfy { supportsNUT($0) }
+        guard let nut04 = getNUT04Settings(), let nut05 = getNUT05Settings() else {
+            return false
+        }
+        return !nut04.disabled && !nut05.disabled
     }
     
     /// Get NUT-04 settings if supported
     public func getNUT04Settings() -> NUT04Settings? {
-        guard let nut04Data = nuts?["4"]?.dictionaryValue else { return nil }
+        guard let nut04Data = valueForNUT("4")?.dictionaryValue else { return nil }
         
         let disabled = nut04Data["disabled"] as? Bool ?? false
         
@@ -189,7 +229,7 @@ public struct MintInfo: CashuCodabale, Sendable {
     
     /// Get NUT-05 settings if supported
     public func getNUT05Settings() -> NUT05Settings? {
-        guard let nut05Data = nuts?["5"]?.dictionaryValue else { return nil }
+        guard let nut05Data = valueForNUT("5")?.dictionaryValue else { return nil }
         
         let disabled = nut05Data["disabled"] as? Bool ?? false
         
@@ -221,8 +261,12 @@ public struct MintInfo: CashuCodabale, Sendable {
     
     /// Check if a specific NUT is supported with boolean response
     public func isNUTSupported(_ nut: String) -> Bool {
-        guard let nutData = nuts?[nut]?.dictionaryValue else {
-            return nuts?[nut]?.stringValue != nil
+        guard let nutValue = valueForNUT(nut) else {
+            return false
+        }
+
+        guard let nutData = nutValue.dictionaryValue else {
+            return nutValue.stringValue != nil
         }
         
         return nutData["supported"] as? Bool ?? true

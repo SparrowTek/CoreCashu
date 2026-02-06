@@ -192,24 +192,31 @@ extension CashuWallet {
                     secrets.append(secret)
                 }
                 
-                // Get mint public key for the first amount (assuming single denomination restore)
-                // In a real implementation, you'd match the proper key for each amount
-                guard let keyset = currentKeysets[keysetID],
-                      let firstAmount = blindedSignatures.first?.amount,
-                      let publicKeyHex = keyset.keys[String(firstAmount)],
-                      let publicKeyData = Data(hexString: publicKeyHex),
-                      let mintPublicKey = try? P256K.KeyAgreement.PublicKey(dataRepresentation: publicKeyData, format: .compressed) else {
+                guard let keyset = currentKeysets[keysetID] else {
                     throw CashuError.keysetNotFound
                 }
-                
-                // Restore proofs
-                let restoredProofs = try restoration.restoreProofs(
-                    blindedSignatures: blindedSignatures,
-                    blindingFactors: Array(blindingFactors.prefix(blindedSignatures.count)),
-                    secrets: secrets,
-                    keysetID: keysetID,
-                    mintPublicKey: mintPublicKey
-                )
+
+                // Restore proofs with amount-specific mint keys.
+                var restoredProofs: [Proof] = []
+                for (index, blindedSignature) in blindedSignatures.enumerated() {
+                    guard index < blindingFactors.count, index < secrets.count else {
+                        throw CashuError.mismatchedArrayLengths
+                    }
+                    guard let publicKeyHex = keyset.keys[String(blindedSignature.amount)],
+                          let publicKeyData = Data(hexString: publicKeyHex),
+                          let mintPublicKey = try? P256K.KeyAgreement.PublicKey(dataRepresentation: publicKeyData, format: .compressed) else {
+                        throw CashuError.keysetNotFound
+                    }
+
+                    let restored = try restoration.restoreProofs(
+                        blindedSignatures: [blindedSignature],
+                        blindingFactors: [blindingFactors[index]],
+                        secrets: [secrets[index]],
+                        keysetID: keysetID,
+                        mintPublicKey: mintPublicKey
+                    )
+                    restoredProofs.append(contentsOf: restored)
+                }
                 
                 // Check proof states
                 let stateResult = try await checkProofStates(restoredProofs)

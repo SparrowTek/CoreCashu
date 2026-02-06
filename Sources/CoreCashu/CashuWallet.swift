@@ -724,11 +724,20 @@ public actor CashuWallet {
         guard let keyExchangeService = keyExchangeService else {
             throw CashuError.walletNotInitialized
         }
+        guard let keysetManagementService = keysetManagementService else {
+            throw CashuError.walletNotInitialized
+        }
+
+        // Refresh keyset metadata first so restore/access-token flows can rely on active flags.
+        let keysetInfoResponse = try await keysetManagementService.getKeysets(from: configuration.mintURL)
+        currentKeysetInfos = Dictionary(uniqueKeysWithValues: keysetInfoResponse.keysets.map { ($0.id, $0) })
+
         let keysets = try await keyExchangeService.getActiveKeys(
             from: configuration.mintURL, 
             unit: CurrencyUnit(rawValue: configuration.unit) ?? .sat
         )
-        
+
+        currentKeysets.removeAll()
         for keyset in keysets {
             currentKeysets[keyset.id] = keyset
         }
@@ -972,7 +981,7 @@ public extension CashuWallet {
             .stateCheck, .restore, .p2pk, .dleq, .deterministicSecrets,
             .htlc, .mpp, .overpayOutputSelection, .websockets,
             .paymentRequests, .singleUse, .signatureMintQuotes,
-            .preMint, .accessTokenAuth, .proofOfReserves, .http402
+            .clearAuth, .accessTokenAuth, .bolt11PaymentMethod, .http402
         ]
         
         var report = "Mint Capability Report\n"

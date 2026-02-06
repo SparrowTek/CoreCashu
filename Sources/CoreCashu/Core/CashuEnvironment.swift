@@ -8,13 +8,7 @@
 @CashuActor
 class CashuEnvironment {
     static var current: CashuEnvironment = .init()
-    var baseURL: String?
     let routerDelegate = CashuRouterDelegate()
     
     private init() {}
-    
-    func setup(baseURL: String) {
-        self.baseURL = baseURL
-    }
 }
-

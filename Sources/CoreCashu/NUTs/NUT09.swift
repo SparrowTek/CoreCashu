@@ -33,9 +33,11 @@ public struct RestoreSignatureService: Sendable {
     public func restoreSignatures(request: PostRestoreRequest, mintURL: String) async throws -> PostRestoreResponse {
         // Validate and set the mint URL
         let normalizedURL = try ValidationUtils.normalizeMintURL(mintURL)
-        CashuEnvironment.current.setup(baseURL: normalizedURL)
+        guard let baseURL = URL(string: normalizedURL) else {
+            throw CashuError.invalidMintURL
+        }
         
-        let response: PostRestoreResponse = try await router.execute(.restore(request))
+        let response: PostRestoreResponse = try await router.execute(.restore(request, baseURL: baseURL))
         
         // Validate response integrity
         guard response.isValid else {
@@ -71,15 +73,15 @@ public struct RestoreSignatureService: Sendable {
 // MARK: - API Endpoint Definition
 
 enum RestoreAPI {
-    case restore(PostRestoreRequest)
+    case restore(PostRestoreRequest, baseURL: URL)
 }
 
 extension RestoreAPI: EndpointType {
     public var baseURL: URL {
-        guard let baseURL = CashuEnvironment.current.baseURL, let url = URL(string: baseURL) else { 
-            fatalError("The baseURL for the mint must be set") 
+        switch self {
+        case .restore(_, let baseURL):
+            return baseURL
         }
-        return url
     }
     
     var path: String {
@@ -98,7 +100,7 @@ extension RestoreAPI: EndpointType {
     
     var task: HTTPTask {
         switch self {
-        case .restore(let request):
+        case .restore(let request, _):
             return .requestParameters(encoding: .jsonEncodableEncoding(encodable: request))
         }
     }

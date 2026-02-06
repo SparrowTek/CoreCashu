@@ -126,9 +126,11 @@ public struct KeyExchangeService: Sendable {
     /// - returns: GetKeysResponse with active keysets and their keys
     public func getKeys(from mintURL: String) async throws -> GetKeysResponse {
         let normalizedURL = try ValidationUtils.normalizeMintURL(mintURL)
-        CashuEnvironment.current.setup(baseURL: normalizedURL)
+        guard let baseURL = URL(string: normalizedURL) else {
+            throw CashuError.invalidMintURL
+        }
         
-        return try await router.execute(.getKeys)
+        return try await router.execute(.getKeys(baseURL: baseURL))
     }
     
     /// Get keys for a specific keyset (can be active or inactive)
@@ -138,13 +140,15 @@ public struct KeyExchangeService: Sendable {
     /// - returns: GetKeysResponse with the requested keyset
     public func getKeys(from mintURL: String, keysetID: String) async throws -> GetKeysResponse {
         let normalizedURL = try ValidationUtils.normalizeMintURL(mintURL)
-        CashuEnvironment.current.setup(baseURL: normalizedURL)
+        guard let baseURL = URL(string: normalizedURL) else {
+            throw CashuError.invalidMintURL
+        }
         
         guard KeysetID.validateKeysetID(keysetID) else {
             throw CashuError.invalidKeysetID
         }
         
-        return try await router.execute(.getKeysForKeyset(keysetID))
+        return try await router.execute(.getKeysForKeyset(keysetID, baseURL: baseURL))
     }
     
     /// Get active keysets with specific currency unit
@@ -293,24 +297,25 @@ public struct KeyExchangeService: Sendable {
 // MARK: - API Endpoints
 
 enum KeyExchangeAPI {
-    case getKeys
-    case getKeysForKeyset(String)
+    case getKeys(baseURL: URL)
+    case getKeysForKeyset(String, baseURL: URL)
 }
 
 extension KeyExchangeAPI: EndpointType {
     public var baseURL: URL {
-        guard let baseURL = CashuEnvironment.current.baseURL, 
-              let url = URL(string: baseURL) else { 
-            fatalError("The baseURL for the mint must be set") 
+        switch self {
+        case .getKeys(let baseURL):
+            return baseURL
+        case .getKeysForKeyset(_, let baseURL):
+            return baseURL
         }
-        return url
     }
     
     var path: String {
         switch self {
         case .getKeys:
             return "/v1/keys"
-        case .getKeysForKeyset(let keysetID):
+        case .getKeysForKeyset(let keysetID, _):
             return "/v1/keys/\(keysetID)"
         }
     }

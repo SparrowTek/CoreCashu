@@ -13,6 +13,9 @@ import Security
 /// Cross-platform secure random bytes generation
 public enum SecureRandom {
     private static let generatorBox = GeneratorBox()
+    private enum TaskScopedGenerator {
+        @TaskLocal static var generator: (@Sendable (_ count: Int) throws -> Data)?
+    }
 
     /// Install a custom random byte generator.
     /// Primarily intended for deterministic testing / fuzzing hooks.
@@ -24,9 +27,33 @@ public enum SecureRandom {
     public static func resetGenerator() {
         generatorBox.store(nil)
     }
+    
+    /// Execute an operation with a task-scoped random byte generator override.
+    /// This avoids leaking deterministic generators into concurrently running tests.
+    public static func withGenerator<R>(
+        _ generator: @escaping @Sendable (_ count: Int) throws -> Data,
+        operation: () throws -> R
+    ) rethrows -> R {
+        try TaskScopedGenerator.$generator.withValue(generator) {
+            try operation()
+        }
+    }
+    
+    /// Async variant of `withGenerator(_:operation:)`.
+    public static func withGenerator<R>(
+        _ generator: @escaping @Sendable (_ count: Int) throws -> Data,
+        operation: () async throws -> R
+    ) async rethrows -> R {
+        try await TaskScopedGenerator.$generator.withValue(generator) {
+            try await operation()
+        }
+    }
 
     private static func activeGenerator() -> (@Sendable (_ count: Int) throws -> Data)? {
-        generatorBox.load()
+        if let taskScopedGenerator = TaskScopedGenerator.generator {
+            return taskScopedGenerator
+        }
+        return generatorBox.load()
     }
     
     /// Generate cryptographically secure random bytes

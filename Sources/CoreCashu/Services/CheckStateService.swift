@@ -27,12 +27,12 @@ public struct CheckStateService: Sendable {
     public func checkStates(yValues: [String], from mintURL: String) async throws -> PostCheckStateResponse {
         // Validate and normalize the mint URL (centralized)
         let normalizedURL = try ValidationUtils.normalizeMintURL(mintURL)
-        
-        // Set the base URL for this request
-        CashuEnvironment.current.setup(baseURL: normalizedURL)
+        guard let baseURL = URL(string: normalizedURL) else {
+            throw CashuError.invalidMintURL
+        }
         
         let request = PostCheckStateRequest(Ys: yValues)
-        return try await router.execute(.checkState(request))
+        return try await router.execute(.checkState(request, baseURL: baseURL))
     }
     
     /// Check the state of specific proofs
@@ -74,15 +74,15 @@ public struct CheckStateService: Sendable {
 // MARK: - CheckState API Endpoint
 
 enum CheckStateAPI {
-    case checkState(PostCheckStateRequest)
+    case checkState(PostCheckStateRequest, baseURL: URL)
 }
 
 extension CheckStateAPI: EndpointType {
     public var baseURL: URL {
-        guard let baseURL = CashuEnvironment.current.baseURL, let url = URL(string: baseURL) else { 
-            fatalError("The baseURL for the mint must be set") 
+        switch self {
+        case .checkState(_, let baseURL):
+            return baseURL
         }
-        return url
     }
     
     var path: String {
@@ -101,7 +101,7 @@ extension CheckStateAPI: EndpointType {
     
     var task: HTTPTask {
         switch self {
-        case .checkState(let request):
+        case .checkState(let request, _):
             return .requestParameters(encoding: .jsonEncodableEncoding(encodable: request))
         }
     }

@@ -28,11 +28,11 @@ public struct MintInfoService: Sendable {
     public func getMintInfo(from mintURL: String) async throws -> MintInfo {
         // Validate and normalize the mint URL
         let normalizedURL = try ValidationUtils.normalizeMintURL(mintURL)
+        guard let baseURL = URL(string: normalizedURL) else {
+            throw CashuError.invalidMintURL
+        }
         
-        // Set the base URL for this request
-        CashuEnvironment.current.setup(baseURL: normalizedURL)
-        
-        return try await router.execute(.getMintInfo)
+        return try await router.execute(.getMintInfo(baseURL: baseURL))
     }
     
     /// Check if a mint is available and responding.
@@ -430,13 +430,15 @@ public struct MintInfoService: Sendable {
 }
 
 enum MintInfoAPI {
-    case getMintInfo
+    case getMintInfo(baseURL: URL)
 }
 
 extension MintInfoAPI: EndpointType {
     public var baseURL: URL {
-        guard let baseURL = CashuEnvironment.current.baseURL, let url = URL(string: baseURL) else { fatalError("The baseURL for the mint must be set") }
-        return url
+        switch self {
+        case .getMintInfo(let baseURL):
+            return baseURL
+        }
     }
     
     var path: String {

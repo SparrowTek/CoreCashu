@@ -141,14 +141,24 @@ public struct SwapPreparation: Sendable {
     public let blindedMessages: [BlindedMessage]
     public let blindingData: [WalletBlindingData]
     public let targetAmount: Int?
+    public let targetOutputDenominations: [Int]
     public let changeAmount: Int
     public let fees: Int
     
-    public init(inputProofs: [Proof], blindedMessages: [BlindedMessage], blindingData: [WalletBlindingData], targetAmount: Int?, changeAmount: Int, fees: Int) {
+    public init(
+        inputProofs: [Proof],
+        blindedMessages: [BlindedMessage],
+        blindingData: [WalletBlindingData],
+        targetAmount: Int?,
+        targetOutputDenominations: [Int] = [],
+        changeAmount: Int,
+        fees: Int
+    ) {
         self.inputProofs = inputProofs
         self.blindedMessages = blindedMessages
         self.blindingData = blindingData
         self.targetAmount = targetAmount
+        self.targetOutputDenominations = targetOutputDenominations
         self.changeAmount = changeAmount
         self.fees = fees
     }
@@ -184,7 +194,9 @@ public struct SwapService: Sendable {
         
         // Setup networking
         let normalizedURL = try ValidationUtils.normalizeMintURL(mintURL)
-        CashuEnvironment.current.setup(baseURL: normalizedURL)
+        guard let baseURL = URL(string: normalizedURL) else {
+            throw CashuError.invalidMintURL
+        }
         
         // Execute swap - use NUT22 request if access token is provided
         if let accessToken = accessToken {
@@ -193,9 +205,9 @@ public struct SwapService: Sendable {
                 outputs: request.outputs,
                 accessToken: accessToken
             )
-            return try await router.execute(.swapWithAccessToken(nut22Request))
+            return try await router.execute(.swapWithAccessToken(nut22Request, baseURL: baseURL))
         } else {
-            return try await router.execute(.swap(request))
+            return try await router.execute(.swap(request, baseURL: baseURL))
         }
     }
     
@@ -284,6 +296,7 @@ public struct SwapService: Sendable {
             blindedMessages: blindedMessages,
             blindingData: blindingData,
             targetAmount: targetAmount,
+            targetOutputDenominations: targetAmountOutputs,
             changeAmount: changeAmount,
             fees: fees
         )
@@ -362,6 +375,7 @@ public struct SwapService: Sendable {
             blindedMessages: blindedMessages,
             blindingData: blindingData,
             targetAmount: nil,
+            targetOutputDenominations: [],
             changeAmount: totalOutput,
             fees: fees
         )
@@ -575,17 +589,18 @@ public struct SwapService: Sendable {
 // MARK: - API Endpoints
 
 enum SwapAPI {
-    case swap(PostSwapRequest)
-    case swapWithAccessToken(NUT22SwapRequest)
+    case swap(PostSwapRequest, baseURL: URL)
+    case swapWithAccessToken(NUT22SwapRequest, baseURL: URL)
 }
 
 extension SwapAPI: EndpointType {
     public var baseURL: URL {
-        guard let baseURL = CashuEnvironment.current.baseURL,
-              let url = URL(string: baseURL) else {
-            fatalError("The baseURL for the mint must be set")
+        switch self {
+        case .swap(_, let baseURL):
+            return baseURL
+        case .swapWithAccessToken(_, let baseURL):
+            return baseURL
         }
-        return url
     }
     
     var path: String {
@@ -604,9 +619,9 @@ extension SwapAPI: EndpointType {
     
     var task: HTTPTask {
         switch self {
-        case .swap(let request):
+        case .swap(let request, _):
             return .requestParameters(encoding: .jsonEncodableEncoding(encodable: request))
-        case .swapWithAccessToken(let request):
+        case .swapWithAccessToken(let request, _):
             return .requestParameters(encoding: .jsonEncodableEncoding(encodable: request))
         }
     }

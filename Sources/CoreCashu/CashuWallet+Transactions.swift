@@ -10,6 +10,103 @@ import Foundation
 // MARK: - Core Wallet Operations
 
 public extension CashuWallet {
+
+    /// Request a mint quote.
+    /// - Parameters:
+    ///   - amount: Amount to mint
+    ///   - method: Payment method (defaults to "bolt11")
+    /// - Returns: Mint quote response containing the payment request
+    func requestMintQuote(amount: Int, method: String = "bolt11") async throws -> MintQuoteResponse {
+        guard isReady else {
+            throw CashuError.walletNotInitialized
+        }
+        guard amount > 0 else {
+            throw CashuError.invalidAmount
+        }
+        guard let mintService = mintService else {
+            throw CashuError.walletNotInitialized
+        }
+
+        return try await mintService.getMintQuote(
+            amount: amount,
+            method: method,
+            unit: configuration.unit,
+            at: configuration.mintURL
+        )
+    }
+
+    /// Check mint quote state.
+    /// - Parameters:
+    ///   - quoteID: Quote identifier
+    ///   - method: Payment method (defaults to "bolt11")
+    /// - Returns: Current quote state
+    func checkMintQuote(_ quoteID: String, method: String = "bolt11") async throws -> MintQuoteResponse {
+        guard isReady else {
+            throw CashuError.walletNotInitialized
+        }
+        guard let mintService = mintService else {
+            throw CashuError.walletNotInitialized
+        }
+
+        return try await mintService.checkMintQuote(quoteID, method: method, at: configuration.mintURL)
+    }
+
+    /// Mint using an existing quote.
+    /// - Parameters:
+    ///   - quoteID: Quote identifier
+    ///   - amount: Amount to mint
+    ///   - method: Payment method (defaults to "bolt11")
+    /// - Returns: Mint result with newly created proofs
+    func mint(
+        quoteID: String,
+        amount: Int,
+        method: String = "bolt11"
+    ) async throws -> MintResult {
+        guard isReady else {
+            throw CashuError.walletNotInitialized
+        }
+        guard amount > 0 else {
+            throw CashuError.invalidAmount
+        }
+        guard let mintService = mintService else {
+            throw CashuError.walletNotInitialized
+        }
+
+        let currentQuote = try await mintService.checkMintQuote(quoteID, method: method, at: configuration.mintURL)
+        if currentQuote.isExpired {
+            throw CashuError.quoteExpired
+        }
+        if currentQuote.isIssued {
+            throw CashuError.invalidState("Mint quote is already issued")
+        }
+        guard currentQuote.canMint else {
+            throw CashuError.quotePending
+        }
+
+        let timer = metrics.startTimer()
+        await metrics.increment(CashuMetrics.mintStart, tags: ["mint": configuration.mintURL, "unit": configuration.unit])
+
+        let preparation = try await mintService.prepareMint(
+            quote: quoteID,
+            amount: amount,
+            method: method,
+            unit: configuration.unit,
+            at: configuration.mintURL
+        )
+        let result = try await mintService.executeCompleteMint(
+            preparation: preparation,
+            method: method,
+            at: configuration.mintURL
+        )
+
+        try await proofManager.addProofs(result.newProofs)
+
+        await metrics.increment(CashuMetrics.mintSuccess, tags: ["mint": configuration.mintURL, "unit": configuration.unit])
+        await metrics.gauge(CashuMetrics.mintAmount, value: Double(amount), tags: ["mint": configuration.mintURL, "unit": configuration.unit])
+        await timer.stop(metricName: CashuMetrics.mintDuration, tags: ["mint": configuration.mintURL, "unit": configuration.unit])
+
+        return result
+    }
     
     /// Mint new tokens from a payment request
     /// - Parameters:
@@ -22,33 +119,12 @@ public extension CashuWallet {
         paymentRequest: String,
         method: String = "bolt11"
     ) async throws -> MintResult {
-        guard isReady else {
-            throw CashuError.walletNotInitialized
+        let quote = try await requestMintQuote(amount: amount, method: method)
+        guard quote.request == paymentRequest else {
+            throw CashuError.invalidState("Provided payment request does not match quote request")
         }
-        
-        guard amount > 0 else {
-            throw CashuError.invalidAmount
-        }
-        
-        guard let mintService = mintService else {
-            throw CashuError.walletNotInitialized
-        }
-        
-        let timer = metrics.startTimer()
-        await metrics.increment(CashuMetrics.mintStart, tags: ["mint": configuration.mintURL, "unit": configuration.unit])
-        
-        let result = try await mintService.mint(
-            amount: amount,
-            method: method,
-            unit: configuration.unit,
-            at: configuration.mintURL
-        )
-        
-        await metrics.increment(CashuMetrics.mintSuccess, tags: ["mint": configuration.mintURL, "unit": configuration.unit])
-        await metrics.gauge(CashuMetrics.mintAmount, value: Double(amount), tags: ["mint": configuration.mintURL, "unit": configuration.unit])
-        await timer.stop(metricName: CashuMetrics.mintDuration, tags: ["mint": configuration.mintURL, "unit": configuration.unit])
-        
-        return result
+
+        return try await mint(quoteID: quote.quote, amount: amount, method: method)
     }
     
     /// Send tokens (prepare for transfer)
@@ -65,19 +141,49 @@ public extension CashuWallet {
             throw CashuError.invalidAmount
         }
         
-        // Select proofs for the amount
-        let selectedProofs = try await proofManager.selectProofs(amount: amount)
-        
-        let tokenEntry = TokenEntry(
-            mint: configuration.mintURL,
-            proofs: selectedProofs
-        )
-        
-        return CashuToken(
-            token: [tokenEntry],
+        guard let swapService = swapService else {
+            throw CashuError.walletNotInitialized
+        }
+
+        let availableProofs = try await proofManager.getAvailableProofs()
+        let preparation = try await swapService.prepareSwapToSend(
+            availableProofs: availableProofs,
+            targetAmount: amount,
             unit: configuration.unit,
-            memo: memo
+            at: configuration.mintURL
         )
+
+        try await proofManager.markAsPendingSpent(preparation.inputProofs)
+        do {
+            let swapResult = try await swapService.executeCompleteSwap(
+                preparation: preparation,
+                at: configuration.mintURL
+            )
+
+            let (sendProofs, changeProofs) = try partitionSwapOutputs(
+                swapResult.newProofs,
+                targetAmount: amount,
+                targetDenominations: preparation.targetOutputDenominations
+            )
+
+            try await proofManager.finalizePendingSpent(preparation.inputProofs)
+            try await proofManager.markAsSpent(preparation.inputProofs)
+            try await proofManager.removeProofs(preparation.inputProofs)
+
+            if !changeProofs.isEmpty {
+                try await proofManager.addProofs(changeProofs)
+            }
+
+            let tokenEntry = TokenEntry(mint: configuration.mintURL, proofs: sendProofs)
+            return CashuToken(
+                token: [tokenEntry],
+                unit: configuration.unit,
+                memo: memo
+            )
+        } catch {
+            try await proofManager.rollbackPendingSpent(preparation.inputProofs)
+            throw error
+        }
     }
     
     /// Select proofs for a specific amount
@@ -102,6 +208,9 @@ public extension CashuWallet {
         guard isReady else {
             throw CashuError.walletNotInitialized
         }
+        guard let swapService = swapService else {
+            throw CashuError.walletNotInitialized
+        }
         
         var allNewProofs: [Proof] = []
         
@@ -112,9 +221,13 @@ public extension CashuWallet {
                 throw CashuError.invalidMintConfiguration
             }
             
-            // Add proofs to our storage
-            try await proofManager.addProofs(tokenEntry.proofs)
-            allNewProofs.append(contentsOf: tokenEntry.proofs)
+            // Always swap received proofs to invalidate sender's proofs and get fresh outputs.
+            let swapResult = try await swapService.swapToReceive(
+                proofs: tokenEntry.proofs,
+                at: configuration.mintURL
+            )
+            try await proofManager.addProofs(swapResult.newProofs)
+            allNewProofs.append(contentsOf: swapResult.newProofs)
         }
         
         return allNewProofs
@@ -185,3 +298,44 @@ public extension CashuWallet {
 }
 
 // WalletStatistics is defined in CashuWallet.swift
+
+extension CashuWallet {
+    private func partitionSwapOutputs(
+        _ newProofs: [Proof],
+        targetAmount: Int,
+        targetDenominations: [Int]
+    ) throws -> (sendProofs: [Proof], changeProofs: [Proof]) {
+        guard !newProofs.isEmpty else {
+            throw CashuError.invalidState("Swap returned no proofs")
+        }
+
+        if !targetDenominations.isEmpty {
+            var requiredByAmount: [Int: Int] = [:]
+            for amount in targetDenominations {
+                requiredByAmount[amount, default: 0] += 1
+            }
+
+            var send: [Proof] = []
+            var change: [Proof] = []
+            for proof in newProofs.sorted(by: { $0.amount < $1.amount }) {
+                let needed = requiredByAmount[proof.amount] ?? 0
+                if needed > 0 {
+                    send.append(proof)
+                    requiredByAmount[proof.amount] = needed - 1
+                } else {
+                    change.append(proof)
+                }
+            }
+
+            if requiredByAmount.values.allSatisfy({ $0 == 0 }) {
+                let sendTotal = send.reduce(0) { $0 + $1.amount }
+                guard sendTotal == targetAmount else {
+                    throw CashuError.invalidState("Swap output partition mismatch")
+                }
+                return (send, change)
+            }
+        }
+
+        throw CashuError.invalidState("Could not partition swap outputs for exact send amount")
+    }
+}

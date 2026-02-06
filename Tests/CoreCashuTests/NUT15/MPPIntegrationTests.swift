@@ -67,7 +67,11 @@ struct MPPIntegrationTests {
             partialAmountMsat: 50000
         )
         
-        let endpoint = MeltAPI.requestMeltQuoteWithMPP("bolt11", request)
+        let endpoint = MeltAPI.requestMeltQuoteWithMPP(
+            "bolt11",
+            request,
+            baseURL: URL(string: "https://mint.example.com")!
+        )
         
         // Test endpoint properties
         #expect(await endpoint.path == "/v1/melt/quote/bolt11")

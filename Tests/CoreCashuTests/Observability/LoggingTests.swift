@@ -200,7 +200,8 @@ struct LoggingTests {
         #expect(capturedLog != nil)
         #expect(capturedLog!.contains("message=Test"))
         #expect(capturedLog!.contains("level=info"))
-        #expect(capturedLog!.contains("\"value with spaces\""))
+        #expect(capturedLog!.contains("metadata="))
+        #expect(capturedLog!.contains("value with spaces"))
     }
 
     // MARK: - Console Logger Tests

@@ -272,9 +272,11 @@ public struct KeysetManagementService: Sendable {
     /// - returns: GetKeysetsResponse with keyset information
     public func getKeysets(from mintURL: String) async throws -> GetKeysetsResponse {
         let normalizedURL = try ValidationUtils.normalizeMintURL(mintURL)
-        CashuEnvironment.current.setup(baseURL: normalizedURL)
+        guard let baseURL = URL(string: normalizedURL) else {
+            throw CashuError.invalidMintURL
+        }
         
-        return try await router.execute(.getKeysets)
+        return try await router.execute(.getKeysets(baseURL: baseURL))
     }
     
     /// Get active keysets only
@@ -537,16 +539,15 @@ public struct KeysetManagementService: Sendable {
 // MARK: - API Endpoints (NUT-02 specific)
 
 enum KeysetAPI {
-    case getKeysets
+    case getKeysets(baseURL: URL)
 }
 
 extension KeysetAPI: EndpointType {
     public var baseURL: URL {
-        guard let baseURL = CashuEnvironment.current.baseURL, 
-              let url = URL(string: baseURL) else { 
-            fatalError("The baseURL for the mint must be set") 
+        switch self {
+        case .getKeysets(let baseURL):
+            return baseURL
         }
-        return url
     }
     
     var path: String {

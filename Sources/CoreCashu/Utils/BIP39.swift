@@ -8,7 +8,6 @@
 
 import Foundation
 import CryptoKit
-import CryptoSwift
 
 /// BIP39 Mnemonic implementation for cross-platform use
 public enum BIP39 {
@@ -266,7 +265,7 @@ public enum BIP39 {
         }
         
         // Use the same implementation as NUT13
-        return createSeedFromMnemonic(mnemonic: mnemonic, passphrase: passphrase)
+        return try createSeedFromMnemonic(mnemonic: mnemonic, passphrase: passphrase)
     }
 }
 
@@ -285,26 +284,56 @@ private extension String {
 
 // MARK: - Bridge to existing implementation
 
-private func createSeedFromMnemonic(mnemonic: String, passphrase: String) -> Data {
+private func createSeedFromMnemonic(mnemonic: String, passphrase: String) throws -> Data {
     let mnemonicData = mnemonic.data(using: .utf8) ?? Data()
     let salt = "mnemonic\(passphrase)".data(using: .utf8) ?? Data()
     
-    // BIP39 specifies PBKDF2 with HMAC-SHA512, 2048 iterations
-    // Using CryptoSwift for cross-platform compatibility
-    do {
-        let password = Array(mnemonicData)
-        let saltBytes = Array(salt)
-        let seed = try PKCS5.PBKDF2(
-            password: password,
-            salt: saltBytes,
-            iterations: 2048,
-            keyLength: 64,
-            variant: .sha2(.sha512)
-        ).calculate()
-        return Data(seed)
-    } catch {
-        // Fallback to a deterministic but non-standard seed
-        let combined = mnemonicData + salt
-        return Data(SHA512.hash(data: combined))
+    // BIP39 specifies PBKDF2 with HMAC-SHA512, 2048 iterations.
+    return pbkdf2SHA512(
+        password: mnemonicData,
+        salt: salt,
+        iterations: 2048,
+        keyLength: 64
+    )
+}
+
+private func pbkdf2SHA512(password: Data, salt: Data, iterations: Int, keyLength: Int) -> Data {
+    precondition(iterations > 0, "PBKDF2 requires at least one iteration")
+    precondition(keyLength > 0, "PBKDF2 requires a positive key length")
+
+    let hmacLength = 64 // SHA512 output size
+    let blockCount = Int(ceil(Double(keyLength) / Double(hmacLength)))
+    let key = CryptoKit.SymmetricKey(data: password)
+    var derived = Data()
+
+    for blockIndex in 1...blockCount {
+        var saltBlock = salt
+        var bigEndianIndex = UInt32(blockIndex).bigEndian
+        withUnsafeBytes(of: &bigEndianIndex) { saltBlock.append(contentsOf: $0) }
+
+        var u = Data(CryptoKit.HMAC<CryptoKit.SHA512>.authenticationCode(for: saltBlock, using: key))
+        var t = u
+
+        if iterations > 1 {
+            for _ in 2...iterations {
+                u = Data(CryptoKit.HMAC<CryptoKit.SHA512>.authenticationCode(for: u, using: key))
+                xorInPlace(&t, with: u)
+            }
+        }
+
+        derived.append(t)
+    }
+
+    return derived.prefix(keyLength)
+}
+
+private func xorInPlace(_ lhs: inout Data, with rhs: Data) {
+    precondition(lhs.count == rhs.count, "PBKDF2 XOR buffers must match in length")
+    lhs.withUnsafeMutableBytes { lhsBuffer in
+        rhs.withUnsafeBytes { (rhsBuffer: UnsafeRawBufferPointer) in
+            for index in 0..<lhsBuffer.count {
+                lhsBuffer[index] ^= rhsBuffer[index]
+            }
+        }
     }
 }

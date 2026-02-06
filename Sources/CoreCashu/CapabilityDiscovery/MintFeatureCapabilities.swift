@@ -121,7 +121,7 @@ public extension MintFeatureCapability {
     )
     
     static let overpayOutputSelection = MintFeatureCapability(
-        nutID: "16",
+        nutID: "08",
         name: "Overpaid Fees",
         description: "Return overpaid lightning fees"
     )
@@ -150,10 +150,10 @@ public extension MintFeatureCapability {
         description: "Signed mint quotes for accountability"
     )
     
-    static let preMint = MintFeatureCapability(
+    static let clearAuth = MintFeatureCapability(
         nutID: "21",
-        name: "Pre-Mint",
-        description: "Reserve tokens before payment completion"
+        name: "Clear Authentication",
+        description: "Authenticated access for protected mint endpoints"
     )
     
     static let accessTokenAuth = MintFeatureCapability(
@@ -162,10 +162,10 @@ public extension MintFeatureCapability {
         description: "Bearer token authentication for mint access"
     )
     
-    static let proofOfReserves = MintFeatureCapability(
+    static let bolt11PaymentMethod = MintFeatureCapability(
         nutID: "23",
-        name: "Proof of Reserves",
-        description: "Cryptographic proof of mint reserves"
+        name: "BOLT11 Payment Method",
+        description: "Mint/melt support for Lightning BOLT11 invoices"
     )
     
     static let http402 = MintFeatureCapability(
@@ -200,7 +200,7 @@ public struct MintFeatureCapabilityManager: Sendable {
             .stateCheck, .restore, .p2pk, .dleq, .deterministicSecrets,
             .htlc, .mpp, .overpayOutputSelection, .websockets,
             .paymentRequests, .singleUse, .signatureMintQuotes,
-            .preMint, .accessTokenAuth, .proofOfReserves, .http402
+            .clearAuth, .accessTokenAuth, .bolt11PaymentMethod, .http402
         ]
         
         for capability in allCapabilities {
@@ -343,7 +343,7 @@ public struct FeatureProbeFactory {
             .stateCheck, .restore, .p2pk, .dleq, .deterministicSecrets,
             .htlc, .mpp, .overpayOutputSelection, .websockets,
             .paymentRequests, .singleUse, .signatureMintQuotes,
-            .preMint, .accessTokenAuth, .proofOfReserves, .http402
+            .clearAuth, .accessTokenAuth, .bolt11PaymentMethod, .http402
         ]
         
         var probes: [MintFeatureCapability: any FeatureProbe] = [:]

@@ -370,8 +370,12 @@ public actor FileSecureStore: SecureStore {
         if let directory {
             return directory
         }
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        return home.appendingPathComponent(".cashu/secure")
+        #if os(iOS) || os(tvOS) || os(watchOS) || os(visionOS)
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        #else
+        let base = FileManager.default.homeDirectoryForCurrentUser
+        #endif
+        return base.appendingPathComponent(".cashu/secure")
     }
 
     private static func prepareDirectory(_ directory: URL) throws {

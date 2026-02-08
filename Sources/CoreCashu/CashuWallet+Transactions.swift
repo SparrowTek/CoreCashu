@@ -108,25 +108,6 @@ public extension CashuWallet {
         return result
     }
     
-    /// Mint new tokens from a payment request
-    /// - Parameters:
-    ///   - amount: Amount to mint
-    ///   - paymentRequest: Payment request (e.g., Lightning invoice)
-    ///   - method: Payment method (defaults to "bolt11")
-    /// - Returns: Mint result with new proofs
-    func mint(
-        amount: Int,
-        paymentRequest: String,
-        method: String = "bolt11"
-    ) async throws -> MintResult {
-        let quote = try await requestMintQuote(amount: amount, method: method)
-        guard quote.request == paymentRequest else {
-            throw CashuError.invalidState("Provided payment request does not match quote request")
-        }
-
-        return try await mint(quoteID: quote.quote, amount: amount, method: method)
-    }
-    
     /// Send tokens (prepare for transfer)
     /// - Parameters:
     ///   - amount: Amount to send

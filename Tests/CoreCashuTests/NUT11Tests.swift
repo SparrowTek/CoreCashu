@@ -1,6 +1,8 @@
 import Testing
 @testable import CoreCashu
 import Foundation
+import CryptoKit
+import P256K
 
 @Suite("NUT11 - Pay to Public Key (P2PK)", .serialized)
 struct NUT11Tests {
@@ -81,6 +83,113 @@ struct NUT11Tests {
         #expect(throws: CashuError.self) {
             _ = try P2PKSpendingCondition.multisig(publicKeys: ["02aa"], requiredSigs: 5)
         }
+    }
+
+    @Test("Multisig rejects duplicate public keys")
+    func testMultisigRejectsDuplicatePublicKeys() async throws {
+        let key = "0249098aa8b9d2fbec49ff8598feb17b592b986e62319a4fa488a3dc36387157a7"
+        #expect(throws: CashuError.self) {
+            _ = try P2PKSpendingCondition.multisig(publicKeys: [key, key], requiredSigs: 2)
+        }
+    }
+
+    // MARK: - BIP340 Schnorr signature verification (post-Phase-2 fix)
+
+    /// Generates a fresh secp256k1 keypair, signs the spec-style P2PK secret string with BIP340
+    /// Schnorr, and asserts that `P2PKSignatureValidator` accepts it. This is the cryptographic
+    /// roundtrip that the previous Curve25519 implementation could not have satisfied.
+    @Test("BIP340 Schnorr roundtrip — valid signature accepted")
+    func testSchnorrRoundtripValid() throws {
+        let privateKey = try P256K.Schnorr.PrivateKey()
+        let xOnlyHex = privateKey.xonly.bytes.hexString
+        let publicKeyHex = "02" + xOnlyHex // compressed-form pubkey acceptable per NUT-11
+
+        let condition = P2PKSpendingCondition(
+            publicKey: publicKeyHex,
+            nonce: "859d4935c4907062a6297cf4e663e2835d90d97ecdd510745d32f6816323a41f",
+            signatureFlag: .sigInputs
+        )
+        let secretString = try condition.toWellKnownSecret().toJSONString()
+
+        // Sign SHA256(secret) with raw-bytes Schnorr API.
+        var messageBytes = Array(SHA256.hash(data: Data(secretString.utf8)))
+        var auxRand = [UInt8](repeating: 0, count: 32)
+        let signature = try auxRand.withUnsafeMutableBytes { auxPtr -> P256K.Schnorr.SchnorrSignature in
+            try privateKey.signature(message: &messageBytes, auxiliaryRand: auxPtr.baseAddress, strict: true)
+        }
+        let signatureHex = signature.dataRepresentation.hexString
+
+        #expect(P2PKSignatureValidator.validateSignature(
+            signature: signatureHex,
+            publicKey: publicKeyHex,
+            message: secretString
+        ) == true)
+
+        // x-only form (32-byte) of the same key must also work.
+        #expect(P2PKSignatureValidator.validateSignature(
+            signature: signatureHex,
+            publicKey: xOnlyHex,
+            message: secretString
+        ) == true)
+    }
+
+    @Test("BIP340 Schnorr — wrong message rejected")
+    func testSchnorrRejectsWrongMessage() throws {
+        let privateKey = try P256K.Schnorr.PrivateKey()
+        let publicKeyHex = "02" + privateKey.xonly.bytes.hexString
+
+        var goodMessage = Array(SHA256.hash(data: Data("legit".utf8)))
+        var auxRand = [UInt8](repeating: 0, count: 32)
+        let signature = try auxRand.withUnsafeMutableBytes { auxPtr -> P256K.Schnorr.SchnorrSignature in
+            try privateKey.signature(message: &goodMessage, auxiliaryRand: auxPtr.baseAddress, strict: true)
+        }
+        let signatureHex = signature.dataRepresentation.hexString
+
+        #expect(P2PKSignatureValidator.validateSignature(
+            signature: signatureHex,
+            publicKey: publicKeyHex,
+            message: "tampered"
+        ) == false)
+    }
+
+    @Test("BIP340 Schnorr — malformed signature length rejected")
+    func testSchnorrRejectsMalformedInputs() {
+        let validKey = "0249098aa8b9d2fbec49ff8598feb17b592b986e62319a4fa488a3dc36387157a7"
+        // Too-short signature
+        #expect(P2PKSignatureValidator.validateSignature(
+            signature: "deadbeef",
+            publicKey: validKey,
+            message: "msg"
+        ) == false)
+        // Non-hex signature
+        #expect(P2PKSignatureValidator.validateSignature(
+            signature: "zz",
+            publicKey: validKey,
+            message: "msg"
+        ) == false)
+        // Wrong public key length
+        #expect(P2PKSignatureValidator.validateSignature(
+            signature: String(repeating: "00", count: 64),
+            publicKey: "deadbeef",
+            message: "msg"
+        ) == false)
+    }
+
+    /// Spec test vector: a Curve25519-typed signature must NOT verify under the secp256k1 path.
+    /// This is the regression test for the consensus bug fixed in Phase 2.1.
+    @Test("Curve25519 signatures from old code path do not verify")
+    func testCurve25519SignatureRejected() throws {
+        // The signature from claude/Nuts/tests/11-test.md "valid signature" vector is a real
+        // Schnorr signature, so we use a *different* hex string that's a syntactically valid
+        // 64-byte payload but cryptographically random — it should not verify under any pubkey.
+        let randomSig = String(repeating: "ab", count: 64)
+        let pubKey = "0249098aa8b9d2fbec49ff8598feb17b592b986e62319a4fa488a3dc36387157a7"
+        let secret = "[\"P2PK\",{\"nonce\":\"859d4935c4907062a6297cf4e663e2835d90d97ecdd510745d32f6816323a41f\",\"data\":\"\(pubKey)\",\"tags\":[[\"sigflag\",\"SIG_INPUTS\"]]}]"
+        #expect(P2PKSignatureValidator.validateSignature(
+            signature: randomSig,
+            publicKey: pubKey,
+            message: secret
+        ) == false)
     }
 
     @Test("Timelocked P2PK spending condition")

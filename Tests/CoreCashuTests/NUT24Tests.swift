@@ -70,7 +70,7 @@ struct NUT24Tests {
     
     // MARK: - HTTP Response Tests
     
-    @Test("HTTP402Response initialization")
+    @Test("HTTP402Response initialization (NUT-18 encoded)")
     func testHTTP402Response() throws {
         let paymentRequest = HTTP402PaymentRequest(
             amount: 100,
@@ -78,30 +78,42 @@ struct NUT24Tests {
             mints: ["https://mint.example.com"],
             nut10: nil
         )
-        
-        let requestData = try JSONEncoder().encode(paymentRequest)
-        let base64Request = requestData.base64EncodedString()
-        
-        let response = HTTP402Response(paymentRequest: base64Request)
-        
+
+        // Spec encoding: NUT-18 creqA<base64-CBOR(PaymentRequest)>
+        let encoded = try CashuHTTPClient.encodePaymentRequest(paymentRequest)
+        #expect(encoded.hasPrefix("creqA"))
+
+        let response = HTTP402Response(paymentRequest: encoded)
+
         #expect(response.statusCode == 402)
-        #expect(response.paymentRequest == base64Request)
+        #expect(response.paymentRequest == encoded)
         #expect(response.decodedRequest != nil)
         #expect(response.decodedRequest?.amount == 100)
         #expect(response.decodedRequest?.unit == "sat")
+        #expect(response.decodedRequest?.mints == ["https://mint.example.com"])
     }
-    
+
     @Test("HTTP402Response with invalid encoding")
     func testHTTP402ResponseInvalidEncoding() {
         let response = HTTP402Response(paymentRequest: "invalid-base64")
-        
+
         #expect(response.statusCode == 402)
         #expect(response.decodedRequest == nil)
     }
-    
+
+    /// Regression test for the Phase 2.5 fix: a plain JSON+base64 payload (the previous
+    /// implementation's wire format) must NOT decode under the new NUT-18 path.
+    @Test("Plain JSON+base64 payload no longer decodes (was the broken format)")
+    func testLegacyJSONBase64Rejected() throws {
+        let plainJSON = #"{"a":100,"u":"sat","m":["https://mint.example.com"]}"#
+        let legacyEncoded = Data(plainJSON.utf8).base64EncodedString()
+        let response = HTTP402Response(paymentRequest: legacyEncoded)
+        #expect(response.decodedRequest == nil)
+    }
+
     // MARK: - HTTP Client Tests
-    
-    @Test("Parse payment required from headers")
+
+    @Test("Parse payment required from headers (NUT-18 encoded)")
     func testParsePaymentRequired() throws {
         let paymentRequest = HTTP402PaymentRequest(
             amount: 100,
@@ -109,48 +121,52 @@ struct NUT24Tests {
             mints: ["https://mint.example.com"],
             nut10: nil
         )
-        
-        let requestData = try JSONEncoder().encode(paymentRequest)
-        let base64Request = requestData.base64EncodedString()
-        
-        let headers = [CashuHTTPHeader.xCashu: base64Request]
+
+        let encoded = try CashuHTTPClient.encodePaymentRequest(paymentRequest)
+        let headers = [CashuHTTPHeader.xCashu: encoded]
         let parsed = CashuHTTPClient.parsePaymentRequired(headers: headers)
-        
+
         #expect(parsed != nil)
         #expect(parsed?.decodedRequest?.amount == 100)
     }
-    
+
     @Test("Parse payment required with missing header")
     func testParsePaymentRequiredMissingHeader() {
         let headers = ["Content-Type": "application/json"]
         let parsed = CashuHTTPClient.parsePaymentRequired(headers: headers)
-        
+
         #expect(parsed == nil)
     }
-    
-    @Test("Create payment headers")
-    func testCreatePaymentHeaders() {
+
+    @Test("Create payment headers (cashuB V4 CBOR)")
+    func testCreatePaymentHeaders() throws {
+        // NUT-00 V4 requires keyset IDs to be valid hex; secrets/Cs are tracked in the V4 schema.
         let proof = Proof(
             amount: 100,
-            id: "test-keyset",
+            id: "009a1f293253e41e", // valid hex keyset id from the NUT-11 spec vectors
             secret: "secret123",
-            C: "signature123"
+            C: "02698c4e2b5f9534cd0687d87513c759790cf829aa5739184a3e3735471fbda904"
         )
-        
+
         let tokenEntry = TokenEntry(
             mint: "https://mint.example.com",
             proofs: [proof]
         )
-        
+
         let token = CashuToken(
             token: [tokenEntry],
             unit: "sat"
         )
-        
-        let headers = CashuHTTPClient.createPaymentHeaders(token: token)
-        
-        #expect(headers[CashuHTTPHeader.xCashu] != nil)
-        #expect(headers[CashuHTTPHeader.xCashu]?.starts(with: "cashuB") == true)
+
+        let headers = try CashuHTTPClient.createPaymentHeaders(token: token)
+
+        let value = try #require(headers[CashuHTTPHeader.xCashu])
+        #expect(value.hasPrefix("cashuB"))
+
+        // Round-trip through the deserializer to confirm it's a real V4 CBOR token.
+        let restored = try CashuTokenUtils.deserializeTokenV4(value)
+        #expect(restored.token.first?.mint == "https://mint.example.com")
+        #expect(restored.token.first?.proofs.first?.amount == 100)
     }
     
     // MARK: - Payment Validation Tests
@@ -355,17 +371,16 @@ struct NUT24Tests {
     @Test("HTTP402PaymentFlow handle payment required")
     func testHTTP402PaymentFlowHandlePaymentRequired() async throws {
         let paymentFlow = HTTP402PaymentFlow()
-        
+
         let paymentRequest = HTTP402PaymentRequest(
             amount: 50,
             unit: "sat",
             mints: ["https://mint.example.com"],
             nut10: nil
         )
-        
-        let requestData = try JSONEncoder().encode(paymentRequest)
-        let base64Request = requestData.base64EncodedString()
-        let response = HTTP402Response(paymentRequest: base64Request)
+
+        let encoded = try CashuHTTPClient.encodePaymentRequest(paymentRequest)
+        let response = HTTP402Response(paymentRequest: encoded)
         
         let validProof = Proof(
             amount: 100,
@@ -398,17 +413,16 @@ struct NUT24Tests {
     @Test("HTTP402PaymentFlow no suitable token")
     func testHTTP402PaymentFlowNoSuitableToken() async throws {
         let paymentFlow = HTTP402PaymentFlow()
-        
+
         let paymentRequest = HTTP402PaymentRequest(
             amount: 50,
             unit: "sat",
             mints: ["https://mint.example.com"],
             nut10: nil
         )
-        
-        let requestData = try JSONEncoder().encode(paymentRequest)
-        let base64Request = requestData.base64EncodedString()
-        let response = HTTP402Response(paymentRequest: base64Request)
+
+        let encoded = try CashuHTTPClient.encodePaymentRequest(paymentRequest)
+        let response = HTTP402Response(paymentRequest: encoded)
         
         let proof = Proof(
             amount: 25, // Not enough

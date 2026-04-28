@@ -103,11 +103,41 @@ struct NUT19Tests {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.httpBody = Data("test payload".utf8)
-        
+
         let key = CacheKeyGenerator.generateKey(for: request)
-        
+
         #expect(key.hasPrefix("POST:/v1/mint/bolt11:"))
         #expect(key.contains(":")) // Should contain payload hash
+    }
+
+    /// Regression test for the Phase 2.2 fix: the previous `Data.sha256Hash` was a byte-sum
+    /// modulo 256 formatted as two hex chars. Any anagram (`"ab"` vs `"ba"`) collided
+    /// trivially. After the fix, real SHA-256 must distinguish them.
+    @Test("Cache key uses real SHA-256 (anagram inputs do not collide)")
+    func testCacheKeyHashIsCryptographic() {
+        // "ab" and "ba" share the same byte-sum (97+98 == 98+97), so the broken
+        // byte-sum hash mapped both to the same value.
+        let payloadA = Data("ab".utf8)
+        let payloadB = Data("ba".utf8)
+
+        let keyA = CacheKeyGenerator.generateKey(method: "POST", path: "/x", payload: payloadA)
+        let keyB = CacheKeyGenerator.generateKey(method: "POST", path: "/x", payload: payloadB)
+        #expect(keyA != keyB)
+
+        // The hash should be 64 hex chars (32-byte SHA-256). The broken version was 2 hex chars.
+        let hashA = String(keyA.split(separator: ":").last ?? "")
+        #expect(hashA.count == 64)
+    }
+
+    @Test("CacheUtils.simpleHash is stable and cryptographic")
+    func testSimpleHashIsStableAndCryptographic() {
+        // Stability: same input → same output, across runs.
+        // (Previous implementation used Swift.hashValue, which was randomized per process.)
+        let a1 = CacheUtils.simpleHash("hello")
+        let a2 = CacheUtils.simpleHash("hello")
+        #expect(a1 == a2)
+        #expect(a1.count == 64) // SHA-256 hex
+        #expect(a1 != CacheUtils.simpleHash("hello!"))
     }
     
     // MARK: - Cached Response Tests

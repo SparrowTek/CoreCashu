@@ -1,5 +1,6 @@
 import Foundation
 import CryptoKit
+import P256K
 
 public enum SignatureFlag: String, CaseIterable, Sendable {
     case sigInputs = "SIG_INPUTS"
@@ -171,6 +172,11 @@ public extension P2PKSpendingCondition {
                 "multisig requiredSigs (\(requiredSigs)) must be in 1...\(publicKeys.count)"
             )
         }
+        // Reject duplicate signing keys — repeated keys cannot strengthen N-of-M, and accepting
+        // them would let `requiredSigs` be satisfied by one party signing twice.
+        guard Set(publicKeys).count == publicKeys.count else {
+            throw CashuError.invalidSpendingCondition("multisig public keys must be unique")
+        }
 
         let additionalKeys = Array(publicKeys.dropFirst())
 
@@ -196,48 +202,71 @@ public extension P2PKSpendingCondition {
 }
 
 public struct P2PKSignatureValidator {
-    
+
+    /// Validates a single BIP340 Schnorr signature over `SHA256(message)`, per NUT-11.
+    ///
+    /// - Parameters:
+    ///   - signature: 64-byte BIP340 Schnorr signature, hex-encoded.
+    ///   - publicKey: secp256k1 public key, hex-encoded — either compressed (33 bytes) or already x-only (32 bytes).
+    ///   - message: UTF-8 message; the function hashes it with SHA-256 before verification.
     public static func validateSignature(
         signature: String,
         publicKey: String,
         message: String
     ) -> Bool {
-        guard let signatureData = Data(hexString: signature),
-              let publicKeyData = Data(hexString: publicKey),
-              let messageData = message.data(using: .utf8) else {
+        guard let messageData = message.data(using: .utf8) else {
             return false
         }
-        
-        let messageHash = SHA256.hash(data: messageData)
-        
-        do {
-            let key = try Curve25519.Signing.PublicKey(rawRepresentation: publicKeyData)
-            return key.isValidSignature(signatureData, for: Data(messageHash))
-        } catch {
-            return false
-        }
+        return validateSignatureOnBytes(
+            signature: signature,
+            publicKey: publicKey,
+            messageBytes: messageData
+        )
     }
-    
+
+    /// Validates a single BIP340 Schnorr signature over `SHA256(messageBytes)`, per NUT-11.
     public static func validateSignatureOnBytes(
         signature: String,
         publicKey: String,
         messageBytes: Data
     ) -> Bool {
-        guard let signatureData = Data(hexString: signature),
-              let publicKeyData = Data(hexString: publicKey) else {
-            return false
-        }
-        
-        let messageHash = SHA256.hash(data: messageBytes)
-        
+        // NUT-11 specifies libsecp256k1 64-byte Schnorr signatures over SHA-256 of the message.
+        // Delegate to the BIP340 path used by NUT-20 to keep one Schnorr chokepoint.
+        let messageHash = Data(SHA256.hash(data: messageBytes))
         do {
-            let key = try Curve25519.Signing.PublicKey(rawRepresentation: publicKeyData)
-            return key.isValidSignature(signatureData, for: Data(messageHash))
+            return try NUT20SignatureManager.verifySignature(
+                signature: signature,
+                messageHash: messageHash,
+                publicKey: publicKey
+            )
         } catch {
             return false
         }
     }
-    
+
+    /// Counts how many distinct signers satisfy the given message; signatures and signers each
+    /// credited at most once. This avoids a single key being counted multiple times by repeating
+    /// its signature, and avoids one signature being credited to multiple signers.
+    private static func countDistinctValidSigners(
+        signatures: [String],
+        signers: [String],
+        validate: (_ signature: String, _ signer: String) -> Bool
+    ) -> Int {
+        var creditedSigners = Set<String>()
+        var consumedSignatureIndices = Set<Int>()
+        for signer in signers {
+            for (index, signature) in signatures.enumerated() {
+                if consumedSignatureIndices.contains(index) { continue }
+                if validate(signature, signer) {
+                    creditedSigners.insert(signer)
+                    consumedSignatureIndices.insert(index)
+                    break
+                }
+            }
+        }
+        return creditedSigners.count
+    }
+
     public static func validateProofSignatures(
         proof: Proof,
         condition: P2PKSpendingCondition
@@ -245,19 +274,9 @@ public struct P2PKSignatureValidator {
         guard let witness = proof.getP2PKWitness() else {
             return false
         }
-        
-        let availableSigners = condition.getAllPossibleSigners()
-        var validSignatureCount = 0
-        
-        for signature in witness.signatures {
-            for signer in availableSigners {
-                if validateSignature(signature: signature, publicKey: signer, message: proof.secret) {
-                    validSignatureCount += 1
-                    break
-                }
-            }
-        }
-        
+
+        // Refund branch wins outright: if the locktime has expired and the refund pubkeys are set,
+        // a single valid signature from any refund key authorizes spending.
         if condition.canBeSpentByRefund() {
             for signature in witness.signatures {
                 for refundKey in condition.refundPubkeys {
@@ -266,11 +285,20 @@ public struct P2PKSignatureValidator {
                     }
                 }
             }
+            return false
         }
-        
+
+        let availableSigners = condition.getAllPossibleSigners()
+        let validSignatureCount = countDistinctValidSigners(
+            signatures: witness.signatures,
+            signers: availableSigners
+        ) { signature, signer in
+            validateSignature(signature: signature, publicKey: signer, message: proof.secret)
+        }
+
         return validSignatureCount >= condition.requiredSigs
     }
-    
+
     public static func validateBlindedMessageSignatures(
         blindedMessage: BlindedMessage,
         condition: P2PKSpendingCondition
@@ -279,19 +307,7 @@ public struct P2PKSignatureValidator {
               let messageBytes = Data(hexString: blindedMessage.B_) else {
             return false
         }
-        
-        let availableSigners = condition.getAllPossibleSigners()
-        var validSignatureCount = 0
-        
-        for signature in witness.signatures {
-            for signer in availableSigners {
-                if validateSignatureOnBytes(signature: signature, publicKey: signer, messageBytes: messageBytes) {
-                    validSignatureCount += 1
-                    break
-                }
-            }
-        }
-        
+
         if condition.canBeSpentByRefund() {
             for signature in witness.signatures {
                 for refundKey in condition.refundPubkeys {
@@ -300,8 +316,17 @@ public struct P2PKSignatureValidator {
                     }
                 }
             }
+            return false
         }
-        
+
+        let availableSigners = condition.getAllPossibleSigners()
+        let validSignatureCount = countDistinctValidSigners(
+            signatures: witness.signatures,
+            signers: availableSigners
+        ) { signature, signer in
+            validateSignatureOnBytes(signature: signature, publicKey: signer, messageBytes: messageBytes)
+        }
+
         return validSignatureCount >= condition.requiredSigs
     }
     

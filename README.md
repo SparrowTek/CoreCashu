@@ -275,7 +275,8 @@ let restoredBalance = try await wallet.restoreFromSeed(batchSize: 100) { progres
 
 CoreCashu has completed comprehensive security hardening in preparation for external audit. See the full documentation in the `Docs/` directory.
 
-### Security Documentation
+### Security & Status Documentation
+- **[NUT Status Matrix](Docs/NUT_STATUS.md)**: Per-NUT implementation, vector-test, and capability-flag status. Authoritative source for "what's supported." Tracks upstream `cashubtc/nuts`.
 - **[Threat Model](Docs/threat_model.md)**: STRIDE analysis, trust boundaries, asset classification
 - **[Security Assumptions](Docs/security_assumptions.md)**: Platform trust, cryptographic assumptions
 - **[Audit Scope](Docs/audit_scope.md)**: Security-critical code paths for review

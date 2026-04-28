@@ -7,6 +7,7 @@
 //
 
 import Foundation
+import CryptoSwift
 
 // MARK: - NUT-19: Cached Responses
 
@@ -477,11 +478,12 @@ extension MintInfo {
 // MARK: - Data Extensions
 
 extension Data {
-    /// Calculate SHA256 hash of the data
+    /// Real SHA-256 hash of the data, hex-encoded.
+    ///
+    /// Used as cache-key material for NUT-19 idempotent responses. Must be a real
+    /// cryptographic hash so that distinct payloads cannot collide on the cache key.
     var sha256Hash: String {
-        // This is a simplified hash implementation
-        // In a real implementation, you would use CryptoKit or similar
-        return String(format: "%02x", self.reduce(0) { $0 &+ Int($1) })
+        Data(self.sha256()).hexString
     }
 }
 
@@ -554,11 +556,13 @@ public struct MockNetworkService: NetworkService {
 
 /// Utility functions for cache operations
 public struct CacheUtils {
-    /// Generate a simple hash for cache keys
+    /// Generate a stable cryptographic hash for cache keys.
+    ///
+    /// Uses SHA-256 (via CryptoSwift) so the result is deterministic across runs and across
+    /// platforms. The previous implementation used `Swift.hashValue`, which is randomized per
+    /// process and not suitable for any persistent cache key.
     public static func simpleHash(_ input: String) -> String {
-        // Simple hash implementation for demonstration
-        // In production, use a proper hash function
-        return String(format: "%08x", input.hashValue)
+        Data(Array(input.utf8).sha256()).hexString
     }
     
     /// Format cache key for readability

@@ -45,30 +45,45 @@ public enum CashuHTTPHeader {
 
 // MARK: - HTTP 402 Response
 
-/// Represents an HTTP 402 Payment Required response with Cashu payment details
+/// Represents an HTTP 402 Payment Required response with Cashu payment details.
+///
+/// Per NUT-24, the `X-Cashu` header on a 402 response is an *encoded NUT-18 payment request*
+/// (i.e., `creqA<base64-CBOR(PaymentRequest)>`). This type retains a convenience wrapper with
+/// non-optional fields, but encoding/decoding now routes through `PaymentRequestEncoder` so
+/// the wire format matches the spec.
 public struct HTTP402Response: Sendable {
     /// The HTTP status code (always 402)
     public let statusCode: Int = 402
-    
+
     /// The encoded payment request from the X-Cashu header
     public let paymentRequest: String
-    
-    /// The decoded payment request
+
+    /// The decoded payment request, if it parses as a valid NUT-18 payment request and
+    /// contains the NUT-24-required fields (`a`, `u`, `m`).
     public let decodedRequest: HTTP402PaymentRequest?
-    
+
     public init(paymentRequest: String) {
         self.paymentRequest = paymentRequest
         self.decodedRequest = Self.decodePaymentRequest(paymentRequest)
     }
-    
-    /// Decode the payment request from the X-Cashu header
+
+    /// Decode the payment request from the X-Cashu header using the NUT-18 codec.
+    ///
+    /// Falls back to nil if the encoded payload is not a valid NUT-18 payment request, or if
+    /// any of the NUT-24-required fields (amount, unit, mints) are missing.
     private static func decodePaymentRequest(_ encoded: String) -> HTTP402PaymentRequest? {
-        // The payment request should be encoded as per NUT-18
-        guard let data = Data(base64Encoded: encoded),
-              let decoded = try? JSONDecoder().decode(HTTP402PaymentRequest.self, from: data) else {
+        guard let nut18 = try? PaymentRequestEncoder.decode(encoded),
+              let amount = nut18.a,
+              let unit = nut18.u,
+              let mints = nut18.m else {
             return nil
         }
-        return decoded
+        return HTTP402PaymentRequest(
+            amount: amount,
+            unit: unit,
+            mints: mints,
+            nut10: nut18.nut10
+        )
     }
 }
 
@@ -76,7 +91,7 @@ public struct HTTP402Response: Sendable {
 
 /// Extensions for handling HTTP 402 responses
 public struct CashuHTTPClient {
-    
+
     /// Parse an HTTP 402 response with X-Cashu header
     public static func parsePaymentRequired(headers: [String: String]) -> HTTP402Response? {
         guard let xCashuValue = headers[CashuHTTPHeader.xCashu] else {
@@ -84,17 +99,25 @@ public struct CashuHTTPClient {
         }
         return HTTP402Response(paymentRequest: xCashuValue)
     }
-    
-    /// Create payment headers with a Cashu token
-    public static func createPaymentHeaders(token: CashuToken) -> [String: String] {
-        // Encode the token as cashuB format
-        // First encode to JSON, then base64
-        guard let tokenData = try? JSONEncoder().encode(token) else {
-            return [:]
-        }
-        
-        let encodedToken = "cashuB" + tokenData.base64EncodedString()
-        return [CashuHTTPHeader.xCashu: encodedToken]
+
+    /// Encode an HTTP402 payment request as a NUT-18 `creqA...` string suitable for the
+    /// `X-Cashu` header on a 402 response.
+    public static func encodePaymentRequest(_ request: HTTP402PaymentRequest) throws -> String {
+        let nut18 = PaymentRequest(
+            a: request.amount,
+            u: request.unit,
+            m: request.mints,
+            nut10: request.nut10
+        )
+        return try PaymentRequestEncoder.encode(nut18)
+    }
+
+    /// Create payment headers with a Cashu token, encoded in the spec-correct NUT-00 V4
+    /// (CBOR) `cashuB...` format. Throws if serialization fails (rather than silently
+    /// returning empty headers, which the previous JSON-based implementation did).
+    public static func createPaymentHeaders(token: CashuToken) throws -> [String: String] {
+        let encoded = try CashuTokenUtils.serializeTokenV4(token)
+        return [CashuHTTPHeader.xCashu: encoded]
     }
     
     /// Validate if a token meets the payment requirements

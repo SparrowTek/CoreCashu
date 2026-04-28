@@ -158,7 +158,10 @@ public final class StructuredLogger: LoggerProtocol, @unchecked Sendable {
 
         // Redact sensitive information
         let finalMessage = enableRedaction ? redactor.redact(message) : message
-        let finalMetadata = enableRedaction && metadata != nil ? redactor.redactMetadata(metadata!) : metadata
+        let finalMetadata: [String: Any]? = {
+            guard enableRedaction, let metadata else { return metadata }
+            return redactor.redactMetadata(metadata)
+        }()
 
         var entry: [String: Any] = [
             "@timestamp": formatISO8601Date(timestamp),
@@ -309,7 +312,10 @@ public final class StructuredLogger: LoggerProtocol, @unchecked Sendable {
     private func writeLog(_ log: String) {
         switch destination {
         case .stdout:
-            print(log)
+            // Write directly to stdout via FileHandle. `print` is intentionally avoided here
+            // so a project-wide `grep print(` flags only stray debug calls, not the logger's
+            // own configured stdout sink.
+            FileHandle.standardOutput.write(Data((log + "\n").utf8))
 
         case .stderr:
             fputs(log + "\n", stderr)

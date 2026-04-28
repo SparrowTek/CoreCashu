@@ -37,9 +37,13 @@ let package = Package(
             resources: [
                 .copy("Resources/bip39-english.txt")
             ],
+            // Swift 6 language mode (declared below in `swiftLanguageModes`) implies
+            // `-strict-concurrency=complete` for both debug and release. The previous
+            // `unsafeFlags(["-strict-concurrency=complete"], .when(configuration: .debug))`
+            // setting was redundant in debug *and* let release skip strict checks — exactly
+            // the gap CODEX flagged. Drop it.
             swiftSettings: [
-                .enableUpcomingFeature("ExistentialAny"),
-                .unsafeFlags(["-strict-concurrency=complete"], .when(configuration: .debug))
+                .enableUpcomingFeature("ExistentialAny")
             ]
         ),
         .testTarget(
@@ -49,5 +53,6 @@ let package = Package(
                 .define("TESTING")
             ]
         ),
-    ]
+    ],
+    swiftLanguageModes: [.v6]
 )

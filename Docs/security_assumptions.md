@@ -102,12 +102,15 @@ TRUST LEVEL: Partial Trust with Verification
 
 | Primitive | Assumption | Library |
 |-----------|------------|---------|
-| **secp256k1** | ECDLP is computationally hard | swift-secp256k1 |
-| **SHA-256** | Collision resistance, preimage resistance | CryptoSwift |
+| **secp256k1** | ECDLP is computationally hard | swift-secp256k1 (P256K 0.23+) |
+| **BIP340 Schnorr** | Signatures over secp256k1 are unforgeable | swift-secp256k1 (libsecp256k1) |
+| **SHA-256 / SHA-512** | Collision resistance, preimage resistance | CryptoSwift via `Hash` module |
 | **AES-256-GCM** | Provides authenticated encryption | CryptoSwift |
-| **PBKDF2-SHA256** | Key derivation is computationally expensive | CryptoSwift |
-| **BIP39** | Mnemonic entropy is sufficient (128-256 bits) | Custom implementation |
-| **Hash-to-curve** | secp256k1 hash-to-curve is secure | Custom (per BIP-340) |
+| **HMAC-SHA-512** | Used for BIP32 child-key derivation | CryptoSwift via `Hash.hmacSHA512` |
+| **PBKDF2-HMAC-SHA-512 (BIP39)** | Mnemonic→seed: 2048 iterations, 64-byte output (BIP39 spec) | CryptoSwift `PKCS5.PBKDF2` |
+| **PBKDF2-HMAC-SHA-256 (FileSecureStore)** | Password→AES key: 200_000 iterations, 32-byte output, 32-byte salt | CryptoSwift `PKCS5.PBKDF2` |
+| **BIP39** | Mnemonic entropy is sufficient (128-256 bits) | Custom implementation in `Utils/BIP39.swift` |
+| **Hash-to-curve** | secp256k1 hash-to-curve per NUT-00 spec | Custom (try-and-increment over compressed prefix) |
 
 ### 3.2 Protocol Assumptions
 
@@ -122,15 +125,19 @@ TRUST LEVEL: Partial Trust with Verification
 
 ```
 TRUST: Deterministic derivation is secure when:
-  1. Mnemonic has sufficient entropy (128+ bits)
-  2. PBKDF2 uses adequate rounds (100,000)
-  3. Derived secrets are unique per context
+  1. Mnemonic has sufficient entropy (128+ bits — enforced by BIP39.Strength)
+  2. BIP39 PBKDF2 uses 2048 iterations of HMAC-SHA-512 (spec mandate)
+  3. FileSecureStore PBKDF2 uses 200_000 iterations of HMAC-SHA-256 + 32-byte salt
+  4. Derived secrets are unique per context (BIP32 path includes purpose+coin+keyset)
 
 ASSUMPTION: BIP32/BIP39 derivation paths provide:
   - Collision resistance between wallets
   - Unpredictability of child keys from parent
   - Independence between derived secrets
 ```
+
+The BIP39 parameters were verified end-to-end against the project's vector tests after
+the Phase 3 swap from CryptoKit to CryptoSwift's `PKCS5.PBKDF2` — see `Tests/CoreCashuTests/BIP39Tests.swift`.
 
 ---
 

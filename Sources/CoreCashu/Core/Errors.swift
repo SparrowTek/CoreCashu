@@ -18,6 +18,49 @@ public enum CashuErrorCategory: String, Sendable {
 }
 
 /// Errors that can occur during Cashu operations
+/// Structured context attached to ``CashuError/networkFailure(_:)``.
+///
+/// Generic `networkError(String)` strings are not enough for a caller that wants to retry
+/// intelligently — was it a 5xx (transient, retry), a 4xx (permanent, fix the request), or a
+/// transport error (transient, retry with backoff)? This wrapper carries the structured
+/// pieces a retry layer or telemetry consumer actually needs.
+///
+/// - `message`: short human-readable summary.
+/// - `httpStatus`: HTTP status code if the failure originated from a response, otherwise nil
+///   (e.g., DNS failure, TLS handshake failure, timeout).
+/// - `responseBody`: a *size-capped* prefix of the response body. Capped to avoid blowing up
+///   logs and avoid leaking secrets in the rare case a mint includes them in error bodies.
+/// - `underlying`: the lower-level `Error` that triggered this failure, when one exists.
+///   Preserves type structure so a caller can pattern-match on `URLError`, `DecodingError`,
+///   etc., instead of parsing strings.
+public struct NetworkErrorContext: Sendable {
+    /// Default cap for `responseBody` — 4 KiB is enough for diagnostics without leaking
+    /// large payloads into log streams.
+    public static let defaultResponseBodyCap: Int = 4_096
+
+    public let message: String
+    public let httpStatus: Int?
+    public let responseBody: String?
+    public let underlying: (any Error & Sendable)?
+
+    public init(
+        message: String,
+        httpStatus: Int? = nil,
+        responseBody: String? = nil,
+        underlying: (any Error & Sendable)? = nil
+    ) {
+        self.message = message
+        self.httpStatus = httpStatus
+        self.responseBody = NetworkErrorContext.cap(responseBody)
+        self.underlying = underlying
+    }
+
+    private static func cap(_ body: String?) -> String? {
+        guard let body, body.count > defaultResponseBodyCap else { return body }
+        return String(body.prefix(defaultResponseBodyCap)) + "…[truncated]"
+    }
+}
+
 public enum CashuError: Error, Sendable {
     // Core cryptographic errors
     case invalidPoint
@@ -32,11 +75,17 @@ public enum CashuError: Error, Sendable {
     
     // Network and API errors
     case networkError(String)
+    /// Structured network/HTTP failure carrying enough context for intelligent retry
+    /// decisions and telemetry. Prefer this over `.networkError(String)` for new code.
+    case networkFailure(NetworkErrorContext)
     case invalidMintURL
     case mintUnavailable
     case invalidResponse
     case rateLimitExceeded
     case insufficientFunds
+    /// Wraps a lower-level `Error` so type information (e.g., `DecodingError`,
+    /// `URLError`) is preserved instead of stringified.
+    case wrappedFailure(message: String, underlying: any Error & Sendable)
     
     // Token and serialization errors
     case invalidTokenFormat
@@ -149,7 +198,7 @@ extension CashuError {
              .invalidSignature, .domainSeperator, .missingBlindingFactor:
             return .cryptographic
             
-        case .networkError, .invalidMintURL, .mintUnavailable, .invalidResponse,
+        case .networkError, .networkFailure, .invalidMintURL, .mintUnavailable, .invalidResponse,
              .rateLimitExceeded, .httpError:
             return .network
             
@@ -183,7 +232,7 @@ extension CashuError {
             
         case .invalidToken, .tokenAlreadySpent, .invalidProof, .tokenNotFound,
              .invalidState, .serializationError, .jsonEncodingError, .jsonDecodingError,
-             .hexDecodingError, .base64DecodingError:
+             .hexDecodingError, .base64DecodingError, .wrappedFailure:
             return .validation
             
         case .unhandledError, .unknownError:
@@ -199,6 +248,11 @@ extension CashuError {
             return true
         case .httpError(_, let code):
             return code >= 500 || code == 429
+        case .networkFailure(let context):
+            // Same retry rules as raw HTTP errors: 5xx and 429 are transient; missing status
+            // typically means the request never landed (DNS/TLS/timeout) — also transient.
+            guard let status = context.httpStatus else { return true }
+            return status >= 500 || status == 429
         default:
             return false
         }
@@ -239,6 +293,14 @@ extension CashuError: LocalizedError {
         // Network and API errors
         case .networkError(let message):
             return "Network error: \(message)"
+        case .networkFailure(let context):
+            var parts = ["Network failure: \(context.message)"]
+            if let status = context.httpStatus { parts.append("status=\(status)") }
+            if let body = context.responseBody, !body.isEmpty { parts.append("body=\(body)") }
+            if let underlying = context.underlying { parts.append("underlying=\(type(of: underlying))") }
+            return parts.joined(separator: " ")
+        case .wrappedFailure(let message, let underlying):
+            return "\(message) (underlying \(type(of: underlying)): \(underlying.localizedDescription))"
         case .invalidMintURL:
             return "Invalid mint URL"
         case .mintUnavailable:

@@ -203,19 +203,34 @@ public actor OptimizedProofStorage {
 
 // MARK: - Performance Monitoring
 
-/// Simple performance monitor
+/// Simple performance monitor.
+///
+/// `end()` returns the elapsed milliseconds so callers can route the value through their
+/// own logger or metrics client (`MetricsClient.timing(_:duration:)` is the typical
+/// destination). The previous implementation printed straight to stdout, which made the
+/// monitor unusable in production where stdout is not the right sink.
 public struct PerformanceMonitor {
     private let startTime: CFAbsoluteTime
     private let operation: String
-    
+
     public init(operation: String) {
         self.operation = operation
         self.startTime = CFAbsoluteTimeGetCurrent()
     }
-    
-    public func end() {
-        let elapsed = CFAbsoluteTimeGetCurrent() - startTime
-        print("[Performance] \(operation): \(String(format: "%.3f", elapsed * 1000))ms")
+
+    /// Returns the elapsed time in seconds since this monitor was started.
+    public func elapsedSeconds() -> TimeInterval {
+        CFAbsoluteTimeGetCurrent() - startTime
+    }
+
+    /// Convenience: returns elapsed milliseconds (useful for human-readable logging).
+    public func elapsedMilliseconds() -> Double {
+        elapsedSeconds() * 1000
+    }
+
+    @discardableResult
+    public func end() -> TimeInterval {
+        elapsedSeconds()
     }
 }
 

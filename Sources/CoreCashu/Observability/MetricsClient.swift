@@ -147,11 +147,19 @@ struct NoOpMetricTimer: MetricTimer {
 
 // MARK: - Console Metrics Client
 
-/// Simple metrics client that logs to console for development/debugging
+/// Development-only metrics sink that writes formatted lines to standard output.
+///
+/// **Not for production.** This client exists for local development, examples, and tests
+/// where seeing metrics in the terminal is convenient. Production deployments should use
+/// `NoOpMetricsClient` (the default) and inject a real backend (StatsD, OpenTelemetry,
+/// CloudWatch, etc.). The class writes to `FileHandle.standardOutput` directly to make stray
+/// `print()` calls easier to spot in audits — those are bugs, this is by design.
 public actor ConsoleMetricsClient: MetricsClient {
 
     private let dateFormatter: DateFormatter
-    private let enabled: Bool
+    /// `nonisolated` so `nonisolated` methods (e.g., `event(_:metadata:)`) can read it
+    /// without crossing the actor boundary. It's a `let`, so this is safe.
+    nonisolated let enabled: Bool
 
     public init(enabled: Bool = true) {
         self.enabled = enabled
@@ -161,21 +169,18 @@ public actor ConsoleMetricsClient: MetricsClient {
 
     public func increment(_ name: String, tags: [String: String]) async {
         guard enabled else { return }
-        let tagsStr = formatTags(tags)
-        print("[METRIC] \(timestamp()) INCREMENT \(name)\(tagsStr)")
+        emit("[METRIC] \(timestamp()) INCREMENT \(name)\(formatTags(tags))")
     }
 
     public func gauge(_ name: String, value: Double, tags: [String: String]) async {
         guard enabled else { return }
-        let tagsStr = formatTags(tags)
-        print("[METRIC] \(timestamp()) GAUGE \(name)=\(value)\(tagsStr)")
+        emit("[METRIC] \(timestamp()) GAUGE \(name)=\(value)\(formatTags(tags))")
     }
 
     public func timing(_ name: String, duration: TimeInterval, tags: [String: String]) async {
         guard enabled else { return }
-        let tagsStr = formatTags(tags)
         let ms = Int(duration * 1000)
-        print("[METRIC] \(timestamp()) TIMING \(name)=\(ms)ms\(tagsStr)")
+        emit("[METRIC] \(timestamp()) TIMING \(name)=\(ms)ms\(formatTags(tags))")
     }
 
     public nonisolated func startTimer() -> any MetricTimer {
@@ -183,13 +188,23 @@ public actor ConsoleMetricsClient: MetricsClient {
     }
 
     public nonisolated func event(_ name: String, metadata: [String: Any]?) async {
+        // `nonisolated` because the `MetricsClient` protocol's `event(_:metadata:)` carries a
+        // `[String: Any]?` that is not Sendable. Keeping this implementation out of actor
+        // isolation lets callers pass non-Sendable metadata into a console-only sink without
+        // tripping strict-concurrency. `enabled` is a `nonisolated let`, so reading it does
+        // not require awaiting. The timestamp+emit calls do — they touch actor state.
         guard enabled else { return }
         let metaStr = metadata.map { " metadata=\($0)" } ?? ""
-        print("[EVENT] \(await timestamp()) \(name)\(metaStr)")
+        await emit("[EVENT] \(await timestamp()) \(name)\(metaStr)")
     }
 
     public func flush() async {
         // No buffering, so nothing to flush
+    }
+
+    private func emit(_ line: String) {
+        // Direct stdout write so a `grep print(` audit only flags actual debug strays.
+        FileHandle.standardOutput.write(Data((line + "\n").utf8))
     }
 
     private func timestamp() -> String {

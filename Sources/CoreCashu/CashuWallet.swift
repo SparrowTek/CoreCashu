@@ -1076,10 +1076,27 @@ private struct SimpleNetworkService: NetworkService {
             if let errorResponse = try? JSONDecoder().decode(CashuHTTPError.self, from: data) {
                 throw CashuError.httpError(detail: errorResponse.detail, code: errorResponse.code)
             }
-            throw CashuError.networkError("HTTP \(httpResponse.statusCode)")
+            // No structured CashuHTTPError body — emit a NetworkErrorContext so callers can
+            // inspect the status code (and a capped body prefix for diagnostics) instead of
+            // string-parsing "HTTP 500".
+            let bodyString = String(data: data, encoding: .utf8)
+            throw CashuError.networkFailure(NetworkErrorContext(
+                message: "HTTP \(httpResponse.statusCode)",
+                httpStatus: httpResponse.statusCode,
+                responseBody: bodyString
+            ))
         }
-        
-        return try JSONDecoder.cashuDecoder.decode(T.self, from: data)
+
+        do {
+            return try JSONDecoder.cashuDecoder.decode(T.self, from: data)
+        } catch let decodingError {
+            // Preserve `DecodingError` structure rather than stringifying it. Callers that
+            // care can switch on `.wrappedFailure(_, underlying: let err as DecodingError)`.
+            throw CashuError.wrappedFailure(
+                message: "Failed to decode mint response as \(T.self)",
+                underlying: decodingError
+            )
+        }
     }
 }
 

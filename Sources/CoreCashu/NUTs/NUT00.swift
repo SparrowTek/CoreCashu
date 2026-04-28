@@ -36,12 +36,15 @@ import Foundation
 // MARK: - KeyAgreement PublicKey Extensions
 
 extension P256K.KeyAgreement.PublicKey {
-    /// Negates a public key by converting to Signing.PublicKey and back
+    /// Negates a public key by converting to Signing.PublicKey and back.
+    ///
+    /// `P256K.Signing.PublicKey.negation` is non-throwing in P256K 0.23+, so the only
+    /// throwing operations here are the two `init(dataRepresentation:format:)` calls.
     public var negation: P256K.KeyAgreement.PublicKey {
         get throws {
             try CryptoLock.shared.withLock {
                 let signingKey = try P256K.Signing.PublicKey(dataRepresentation: self.dataRepresentation, format: .compressed)
-                let negatedSigningKey = try signingKey.negation
+                let negatedSigningKey = signingKey.negation
                 return try P256K.KeyAgreement.PublicKey(dataRepresentation: negatedSigningKey.dataRepresentation, format: .compressed)
             }
         }

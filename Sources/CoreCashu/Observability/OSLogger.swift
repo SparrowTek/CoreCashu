@@ -104,7 +104,10 @@ public final class OSLogger: LoggerProtocol, @unchecked Sendable {
 
         let osLogType = mapLogLevel(level)
         let redactedMessage = enableRedaction ? redactor.redact(message) : message
-        let redactedMetadata = enableRedaction && metadata != nil ? redactor.redactMetadata(metadata!) : metadata
+        let redactedMetadata: [String: Any]? = {
+            guard enableRedaction, let metadata else { return metadata }
+            return redactor.redactMetadata(metadata)
+        }()
 
         // Format the log message with metadata
         let formattedMessage = formatMessage(

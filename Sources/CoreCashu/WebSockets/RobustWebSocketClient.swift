@@ -421,7 +421,10 @@ public actor RobustWebSocketClient: WebSocketClientProtocol {
             }
 
             // Return first to complete, cancel the other
-            let result = try await group.next()!
+            guard let result = try await group.next() else {
+                group.cancelAll()
+                throw WebSocketError.timeout
+            }
             group.cancelAll()
             return result
         }

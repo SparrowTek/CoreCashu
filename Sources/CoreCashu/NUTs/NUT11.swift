@@ -162,14 +162,18 @@ public extension P2PKSpendingCondition {
         publicKeys: [String],
         requiredSigs: Int,
         signatureFlag: SignatureFlag = .sigInputs
-    ) -> P2PKSpendingCondition {
-        guard !publicKeys.isEmpty else {
-            fatalError("At least one public key required")
+    ) throws -> P2PKSpendingCondition {
+        guard let primaryKey = publicKeys.first else {
+            throw CashuError.invalidSpendingCondition("multisig requires at least one public key")
         }
-        
-        let primaryKey = publicKeys[0]
+        guard requiredSigs > 0, requiredSigs <= publicKeys.count else {
+            throw CashuError.invalidSpendingCondition(
+                "multisig requiredSigs (\(requiredSigs)) must be in 1...\(publicKeys.count)"
+            )
+        }
+
         let additionalKeys = Array(publicKeys.dropFirst())
-        
+
         return P2PKSpendingCondition(
             publicKey: primaryKey,
             signatureFlag: signatureFlag,

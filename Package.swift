@@ -17,10 +17,10 @@ let package = Package(
             targets: ["CoreCashu"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/21-DOT-DEV/swift-secp256k1.git", from: "0.21.1"),
-        .package(url: "https://github.com/krzyzanowskim/CryptoSwift.git", from: "1.9.0"),
-        .package(url: "https://github.com/attaswift/BigInt.git", from: "5.6.0"),
-        .package(url: "https://github.com/valpackett/SwiftCBOR.git", from: "0.5.0"),
+        .package(url: "https://github.com/21-DOT-DEV/swift-secp256k1.git", from: "0.23.0"),
+        .package(url: "https://github.com/krzyzanowskim/CryptoSwift.git", from: "1.10.0"),
+        .package(url: "https://github.com/attaswift/BigInt.git", from: "5.7.0"),
+        .package(url: "https://github.com/valpackett/SwiftCBOR.git", from: "0.6.0"),
         // Apple-specific dependencies removed (bdk-swift, Vault)
         // These will be added in the CashuKit package
     ],

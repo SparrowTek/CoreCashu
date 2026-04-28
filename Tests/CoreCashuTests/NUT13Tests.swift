@@ -155,7 +155,7 @@ struct NUT13Tests {
         let secureStore = try await FileSecureStore(directory: temporaryDirectory())
         try await secureStore.saveMnemonic(mnemonic)
         
-        let configuration = WalletConfiguration(mintURL: "https://test.mint.example.com")
+        let configuration = try WalletConfiguration(mintURL: "https://test.mint.example.com")
         let wallet = try await CashuWallet.restoreFromSecureStore(
             configuration: configuration,
             secureStore: secureStore

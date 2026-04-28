@@ -17,7 +17,7 @@ struct IntegrationTests {
     @Test
     func completeWalletWorkflow() async throws {
         // Create wallet configuration
-        let config = WalletConfiguration(
+        let config = try WalletConfiguration(
             mintURL: Self.testMintURL,
             unit: Self.testUnit,
             retryAttempts: 3,

@@ -371,7 +371,8 @@ public actor FileSecureStore: SecureStore {
             return directory
         }
         #if os(iOS) || os(tvOS) || os(watchOS) || os(visionOS)
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
         #else
         let base = FileManager.default.homeDirectoryForCurrentUser
         #endif

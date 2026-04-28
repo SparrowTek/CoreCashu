@@ -50,7 +50,7 @@ struct NUT11Tests {
             "023192200a0cfd3867e48eb63b03ff599c7e46c8f4e41146b2d281173ca6c50c54"
         ]
         
-        let condition = P2PKSpendingCondition.multisig(
+        let condition = try P2PKSpendingCondition.multisig(
             publicKeys: publicKeys,
             requiredSigs: 2,
             signatureFlag: .sigAll
@@ -69,7 +69,20 @@ struct NUT11Tests {
         #expect(allSigners.contains(publicKeys[1]))
         #expect(allSigners.contains(publicKeys[2]))
     }
-    
+
+    @Test("Multisig rejects invalid inputs instead of crashing")
+    func testMultisigRejectsInvalidInputs() async throws {
+        #expect(throws: CashuError.self) {
+            _ = try P2PKSpendingCondition.multisig(publicKeys: [], requiredSigs: 1)
+        }
+        #expect(throws: CashuError.self) {
+            _ = try P2PKSpendingCondition.multisig(publicKeys: ["02aa"], requiredSigs: 0)
+        }
+        #expect(throws: CashuError.self) {
+            _ = try P2PKSpendingCondition.multisig(publicKeys: ["02aa"], requiredSigs: 5)
+        }
+    }
+
     @Test("Timelocked P2PK spending condition")
     func testTimelockedP2PKSpendingCondition() throws {
         let publicKey = "033281c37677ea273eb7183b783067f5244933ef78d8c3f15b1a77cb246099c26e"

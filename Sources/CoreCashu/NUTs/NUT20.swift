@@ -192,13 +192,20 @@ public struct NUT20SignatureManager: Sendable {
         
         // Create Schnorr private key from raw data
         let schnorrPrivateKey = try P256K.Schnorr.PrivateKey(dataRepresentation: privateKey)
-        
+
         // Generate auxiliary randomness (32 bytes as recommended by BIP340)
-        let auxiliaryRand = Array(try SecureRandom.generateBytes(count: 32))
-        
-        // Create signature using BIP340 Schnorr
-        let signature = try schnorrPrivateKey.signature(for: messageHash, auxiliaryRand: auxiliaryRand)
-        
+        var auxiliaryRand = Array(try SecureRandom.generateBytes(count: 32))
+        var messageBytes = Array(messageHash)
+
+        // Create signature using BIP340 Schnorr (raw-bytes API)
+        let signature = try auxiliaryRand.withUnsafeMutableBytes { auxPtr -> P256K.Schnorr.SchnorrSignature in
+            try schnorrPrivateKey.signature(
+                message: &messageBytes,
+                auxiliaryRand: auxPtr.baseAddress,
+                strict: true
+            )
+        }
+
         // Return the signature as hex string
         return signature.dataRepresentation.hexString
     }
@@ -244,8 +251,9 @@ public struct NUT20SignatureManager: Sendable {
         let xonlyKey = P256K.Schnorr.XonlyKey(dataRepresentation: xOnlyPublicKey)
         
         // Verify the signature using P256K's BIP340-compliant Schnorr implementation
-        // P256K wraps libsecp256k1's secp256k1_schnorrsig_verify function
-        return xonlyKey.isValidSignature(schnorrSignature, for: messageHash)
+        // (raw-bytes API; wraps libsecp256k1_schnorrsig_verify)
+        var messageBytes = Array(messageHash)
+        return xonlyKey.isValid(schnorrSignature, for: &messageBytes)
     }
 }
 

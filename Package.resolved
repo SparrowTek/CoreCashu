@@ -1,5 +1,5 @@
 {
-  "originHash" : "766df01f9d0c54bb78e82b0f6757c528cad89fd3bacd7c7e283ff9f2444d289b",
+  "originHash" : "b78dfcdff07d4e9d2cc8f799ff91e11af5e142ecf569c19b4e41f7a00a7ddeb0",
   "pins" : [
     {
       "identity" : "bigint",
@@ -15,8 +15,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/krzyzanowskim/CryptoSwift.git",
       "state" : {
-        "revision" : "e45a26384239e028ec87fbcc788f513b67e10d8f",
-        "version" : "1.9.0"
+        "revision" : "f2a627b84c1ff96f21ac2fcb623ab36142dd5512",
+        "version" : "1.10.0"
       }
     },
     {
@@ -24,8 +24,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/21-DOT-DEV/swift-secp256k1.git",
       "state" : {
-        "revision" : "8c62aba8a3011c9bcea232e5ee007fb0b34a15e2",
-        "version" : "0.21.1"
+        "revision" : "21d46dd1d11737b77d15bd23468f989b24bc7f40",
+        "version" : "0.23.0"
       }
     },
     {
@@ -33,8 +33,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/valpackett/SwiftCBOR.git",
       "state" : {
-        "revision" : "04ccff117f6549121d5721ec84fdf0162122b90e",
-        "version" : "0.5.0"
+        "revision" : "fd929a6d8f7651ce0f63fc99397fd5762358cc29",
+        "version" : "0.6.0"
       }
     }
   ],

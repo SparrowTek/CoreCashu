@@ -14,7 +14,7 @@ struct HTLCIntegrationTests {
     @Test("Create HTLC with preimage")
     func testCreateHTLCWithPreimage() async throws {
         // Setup
-        let wallet = await createTestWallet()
+        let wallet = try await createTestWallet()
         let preimage = Data("secret_preimage".utf8)
         let amount = 100
 
@@ -42,7 +42,7 @@ struct HTLCIntegrationTests {
     @Test("Create HTLC with locktime and refund key")
     func testCreateHTLCWithLocktimeRefund() async throws {
         // Setup
-        let wallet = await createTestWallet()
+        let wallet = try await createTestWallet()
         let locktime = Date().addingTimeInterval(3600) // 1 hour from now
         let refundKey = "02" + String(repeating: "a", count: 64) // Mock public key
         let amount = 200
@@ -67,7 +67,7 @@ struct HTLCIntegrationTests {
     @Test("Create HTLC with authorized keys")
     func testCreateHTLCWithAuthorizedKeys() async throws {
         // Setup
-        let wallet = await createTestWallet()
+        let wallet = try await createTestWallet()
         let authorizedKeys = [
             "02" + String(repeating: "b", count: 64),
             "02" + String(repeating: "c", count: 64)
@@ -90,7 +90,7 @@ struct HTLCIntegrationTests {
     @Test("Redeem HTLC with valid preimage")
     func testRedeemHTLCValidPreimage() async throws {
         // Setup
-        let wallet = await createTestWallet()
+        let wallet = try await createTestWallet()
         let preimage = Data("test_preimage".utf8)
         let amount = 100
 
@@ -122,7 +122,7 @@ struct HTLCIntegrationTests {
     @Test("Redeem HTLC fails with invalid preimage")
     func testRedeemHTLCInvalidPreimage() async throws {
         // Setup
-        let wallet = await createTestWallet()
+        let wallet = try await createTestWallet()
         let correctPreimage = Data("correct_preimage".utf8)
         let wrongPreimage = Data("wrong_preimage".utf8)
         let amount = 100
@@ -152,7 +152,7 @@ struct HTLCIntegrationTests {
     @Test("Refund expired HTLC")
     func testRefundExpiredHTLC() async throws {
         // Setup
-        let wallet = await createTestWallet()
+        let wallet = try await createTestWallet()
         let pastLocktime = Date().addingTimeInterval(-3600) // 1 hour ago
         let refundKey = "02" + String(repeating: "d", count: 64)
         let refundPrivateKey = String(repeating: "e", count: 64)
@@ -187,7 +187,7 @@ struct HTLCIntegrationTests {
     @Test("Refund fails for non-expired HTLC")
     func testRefundNonExpiredHTLC() async throws {
         // Setup
-        let wallet = await createTestWallet()
+        let wallet = try await createTestWallet()
         let futureLocktime = Date().addingTimeInterval(3600) // 1 hour from now
         let refundKey = "02" + String(repeating: "f", count: 64)
         let refundPrivateKey = String(repeating: "g", count: 64)
@@ -221,7 +221,7 @@ struct HTLCIntegrationTests {
     @Test("Check HTLC status")
     func testCheckHTLCStatus() async throws {
         // Setup
-        let wallet = await createTestWallet()
+        let wallet = try await createTestWallet()
         let locktime = Date().addingTimeInterval(3600)
         let refundKey = "02" + String(repeating: "h", count: 64)
         let amount = 300
@@ -256,7 +256,7 @@ struct HTLCIntegrationTests {
     @Test("HTLC with signatures")
     func testHTLCWithSignatures() async throws {
         // Setup
-        let wallet = await createTestWallet()
+        let wallet = try await createTestWallet()
         let authorizedKeys = ["02" + String(repeating: "i", count: 64)]
         let signatures = [String(repeating: "j", count: 128)] // Mock signature
         let amount = 250
@@ -288,8 +288,8 @@ struct HTLCIntegrationTests {
 
     // MARK: - Helper Functions
 
-    private func createTestWallet() async -> CashuWallet {
-        let config = WalletConfiguration(
+    private func createTestWallet() async throws -> CashuWallet {
+        let config = try WalletConfiguration(
             mintURL: mockMintURL,
             unit: "sat"
         )

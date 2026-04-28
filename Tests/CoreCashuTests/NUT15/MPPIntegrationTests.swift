@@ -44,7 +44,7 @@ struct MPPIntegrationTests {
     @Test("CashuWallet MPP quote request method")
     func testWalletMPPQuoteRequest() async throws {
         // Create a test wallet
-        let wallet = await CashuWallet(
+        let wallet = try await CashuWallet(
             mintURL: "https://test.mint.example.com"
         )
         
@@ -115,11 +115,11 @@ struct MPPIntegrationTests {
         )
         
         // Create test wallets
-        let wallet1 = await CashuWallet(
+        let wallet1 = try await CashuWallet(
             mintURL: "https://mint1.example.com"
         )
-        
-        let wallet2 = await CashuWallet(
+
+        let wallet2 = try await CashuWallet(
             mintURL: "https://mint2.example.com"
         )
         

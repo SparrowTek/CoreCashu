@@ -1,6 +1,7 @@
 import Foundation
-@preconcurrency import P256K
+import P256K
 
-/// Cashu assumes P256K public keys are immutable data wrappers, so we can safely
-/// treat them as Sendable across concurrency domains.
-extension P256K.KeyAgreement.PublicKey: @unchecked @retroactive Sendable {}
+// P256K 0.23+ declares Sendable conformances on its key types directly
+// (KeyAgreement.PublicKey, Schnorr.XonlyKey, etc.). Earlier versions did not,
+// so this file used to add a `@unchecked @retroactive Sendable` shim. Keeping
+// this file as a documentation anchor in case we need to add bridging again.

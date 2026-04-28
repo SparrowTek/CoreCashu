@@ -8,25 +8,25 @@ struct WalletConcurrencyTests {
     @Test("Concurrent wallet initialization")
     func concurrentWalletInit() async throws {
         // Test creating multiple wallets concurrently
-        await withTaskGroup(of: CashuWallet.self) { group in
+        try await withThrowingTaskGroup(of: CashuWallet.self) { group in
             for i in 0..<10 {
                 group.addTask {
-                    await CashuWallet(mintURL: "https://mint\(i).example.com")
+                    try await CashuWallet(mintURL: "https://mint\(i).example.com")
                 }
             }
-            
+
             var wallets: [CashuWallet] = []
-            for await wallet in group {
+            for try await wallet in group {
                 wallets.append(wallet)
             }
-            
+
             #expect(wallets.count == 10)
         }
     }
-    
+
     @Test("Concurrent token operations")
     func concurrentTokenOperations() async throws {
-        let wallet = await CashuWallet(mintURL: "https://test.mint.com")
+        let wallet = try await CashuWallet(mintURL: "https://test.mint.com")
         
         // Create multiple tokens
         let tokens = (0..<5).map { i in
@@ -66,7 +66,7 @@ struct WalletConcurrencyTests {
     
     @Test("Task cancellation handling")
     func taskCancellationHandling() async throws {
-        let wallet = await CashuWallet(mintURL: "https://slow.mint.com")
+        let wallet = try await CashuWallet(mintURL: "https://slow.mint.com")
         
         let task = Task {
             try await wallet.initialize()

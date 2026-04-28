@@ -299,16 +299,22 @@ extension HTLCWitness {
         
         // Hash the message with SHA256 (BIP340 signs 32-byte messages)
         let messageHash = SHA256.hash(data: messageData)
-        let hashData = Data(messageHash)
-        
+        var messageBytes = Array(messageHash)
+
         // Create Schnorr private key
         let schnorrPrivateKey = try P256K.Schnorr.PrivateKey(dataRepresentation: privateKeyData)
-        
+
         // Generate auxiliary randomness for BIP340 (improves side-channel resistance)
-        let auxiliaryRand = try Array(SecureRandom.generateBytes(count: 32))
-        
-        // Create the Schnorr signature
-        let signature = try schnorrPrivateKey.signature(for: hashData, auxiliaryRand: auxiliaryRand)
+        var auxiliaryRand = try Array(SecureRandom.generateBytes(count: 32))
+
+        // Create the Schnorr signature using the raw-bytes API (cross-platform friendly)
+        let signature = try auxiliaryRand.withUnsafeMutableBytes { auxPtr -> P256K.Schnorr.SchnorrSignature in
+            try schnorrPrivateKey.signature(
+                message: &messageBytes,
+                auxiliaryRand: auxPtr.baseAddress,
+                strict: true
+            )
+        }
         
         return signature.dataRepresentation.hexString
     }

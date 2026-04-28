@@ -180,7 +180,7 @@ struct CryptographicTests {
 
         let cases: [P2PKSpendingCondition] = [
             .simple(publicKey: basePubKey),
-            .multisig(publicKeys: [basePubKey] + extraKeys, requiredSigs: 2, signatureFlag: .sigAll),
+            try .multisig(publicKeys: [basePubKey] + extraKeys, requiredSigs: 2, signatureFlag: .sigAll),
             .timelocked(publicKey: basePubKey, locktime: locktime, refundPubkeys: extraKeys)
         ]
 

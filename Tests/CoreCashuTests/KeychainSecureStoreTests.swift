@@ -110,8 +110,8 @@ struct KeychainSecureStoreTests {
     }
 
     @Test("Wallet configuration exposes Keychain access control")
-    func walletConfigurationExposesKeychainAccessControl() {
-        let configuration = WalletConfiguration(
+    func walletConfigurationExposesKeychainAccessControl() throws {
+        let configuration = try WalletConfiguration(
             mintURL: "https://mint.example.com",
             keychainAccessControl: .biometryCurrentSet
         )

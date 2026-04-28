@@ -154,12 +154,15 @@ struct NUT20Tests {
         
         // Create a message hash
         let messageHash = Data(repeating: 0x02, count: 32)
-        
+        var messageBytes = Array(messageHash)
+
         // Generate auxiliary randomness
-        let auxiliaryRand = [UInt8](repeating: 0, count: 32)
-        
-        // Sign the message
-        let signature = try privateKey.signature(for: messageHash, auxiliaryRand: auxiliaryRand)
+        var auxiliaryRand = [UInt8](repeating: 0, count: 32)
+
+        // Sign the message (raw-bytes API in P256K 0.23+)
+        let signature = try auxiliaryRand.withUnsafeMutableBytes { auxPtr -> P256K.Schnorr.SchnorrSignature in
+            try privateKey.signature(message: &messageBytes, auxiliaryRand: auxPtr.baseAddress, strict: true)
+        }
         let signatureHex = signature.dataRepresentation.hexString
         
         // Verify the signature

@@ -237,12 +237,12 @@ struct NUT17Tests {
     @Test("WebSocket URL creation")
     func testWebSocketURLCreation() async throws {
         // Test HTTPS to WSS conversion
-        let httpsWallet = await CashuWallet(mintURL: "https://mint.example.com")
+        let httpsWallet = try await CashuWallet(mintURL: "https://mint.example.com")
         let _ = try await httpsWallet.createWebSocketClient()
         // Can't access private URL property, but creation should succeed
-        
+
         // Test HTTP to WS conversion
-        let httpWallet = await CashuWallet(mintURL: "http://mint.example.com")
+        let httpWallet = try await CashuWallet(mintURL: "http://mint.example.com")
         let _ = try await httpWallet.createWebSocketClient()
         // Can't access private URL property, but creation should succeed
         

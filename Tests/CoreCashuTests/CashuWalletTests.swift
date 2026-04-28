@@ -10,8 +10,8 @@ struct CashuWalletTests {
     @Test
     func walletInitialization() async throws {
         let mintURL = "https://test.mint.example.com"
-        let wallet = await CashuWallet(mintURL: mintURL)
-        
+        let wallet = try await CashuWallet(mintURL: mintURL)
+
         #expect(await wallet.state == .uninitialized)
         #expect(await wallet.isReady == false)
     }
@@ -19,7 +19,7 @@ struct CashuWalletTests {
     @Test
     func meltIdempotencyAndRollback_noLostProofsOnRetry() async throws {
         // Arrange a wallet with deterministic setup
-        let config = WalletConfiguration(mintURL: "https://test.mint.example.com")
+        let config = try WalletConfiguration(mintURL: "https://test.mint.example.com")
         let wallet = await CashuWallet(configuration: config)
         try? await wallet.initialize()
         if await wallet.isReady == false {
@@ -61,16 +61,29 @@ struct CashuWalletTests {
     
     @Test
     func walletConfiguration() async throws {
-        let config = WalletConfiguration(
+        let config = try WalletConfiguration(
             mintURL: "https://test.mint.example.com",
             unit: "sat",
             retryAttempts: 5,
             retryDelay: 2.0,
             operationTimeout: 60.0
         )
-        
+
         let wallet = await CashuWallet(configuration: config)
         #expect(await wallet.state == .uninitialized)
+    }
+
+    @Test
+    func walletConfiguration_rejectsMalformedURL() async throws {
+        #expect(throws: CashuError.self) {
+            _ = try WalletConfiguration(mintURL: "not a url")
+        }
+        #expect(throws: CashuError.self) {
+            _ = try WalletConfiguration(mintURL: "ftp://mint.example.com")
+        }
+        #expect(throws: CashuError.self) {
+            _ = try WalletConfiguration(mintURL: "https://")
+        }
     }
     
     // MARK: - Token Import/Export Tests

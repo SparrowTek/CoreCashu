@@ -656,7 +656,7 @@ struct NUT18Tests {
     @Test("PaymentRequestProcessor - proof selection without locking condition")
     func testProofSelectionWithoutLockingCondition() async throws {
         // Create a mock wallet with test proofs
-        let config = WalletConfiguration(mintURL: "https://mint.example.com")
+        let config = try WalletConfiguration(mintURL: "https://mint.example.com")
         let wallet = await CashuWallet(configuration: config)
         
         // Try to initialize wallet - will fail with test URL
@@ -688,7 +688,7 @@ struct NUT18Tests {
     
     @Test("PaymentRequestProcessor - insufficient balance")
     func testProofSelectionInsufficientBalance() async throws {
-        let config = WalletConfiguration(mintURL: "https://mint.example.com")
+        let config = try WalletConfiguration(mintURL: "https://mint.example.com")
         let wallet = await CashuWallet(configuration: config)
         
         do {
@@ -728,7 +728,7 @@ struct NUT18Tests {
     
     @Test("PaymentRequestProcessor - locking condition not supported")
     func testProofSelectionWithLockingCondition() async throws {
-        let config = WalletConfiguration(mintURL: "https://mint.example.com")
+        let config = try WalletConfiguration(mintURL: "https://mint.example.com")
         let wallet = await CashuWallet(configuration: config)
         
         do {
@@ -768,7 +768,7 @@ struct NUT18Tests {
     
     @Test("PaymentRequestProcessor - missing amount")
     func testProofSelectionMissingAmount() async throws {
-        let config = WalletConfiguration(mintURL: "https://mint.example.com")
+        let config = try WalletConfiguration(mintURL: "https://mint.example.com")
         let wallet = await CashuWallet(configuration: config)
         
         do {
@@ -799,7 +799,7 @@ struct NUT18Tests {
     
     @Test("PaymentRequestProcessor - invalid mint")
     func testProofSelectionInvalidMint() async throws {
-        let config = WalletConfiguration(mintURL: "https://mint.example.com")
+        let config = try WalletConfiguration(mintURL: "https://mint.example.com")
         let wallet = await CashuWallet(configuration: config)
         
         do {

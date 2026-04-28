@@ -14,11 +14,12 @@ public struct CoreCashu {
     ///   - mintURL: URL of the mint
     ///   - unit: Currency unit (defaults to "sat")
     /// - Returns: Initialized wallet instance
+    /// - Throws: ``CashuError/invalidMintURL`` if `mintURL` cannot be parsed.
     public static func createWallet(
         mintURL: String,
         unit: String = "sat"
-    ) async -> CashuWallet {
-        return await CashuWallet(mintURL: mintURL, unit: unit)
+    ) async throws -> CashuWallet {
+        return try await CashuWallet(mintURL: mintURL, unit: unit)
     }
     
     /// Create a wallet with custom configuration

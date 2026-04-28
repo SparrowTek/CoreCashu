@@ -13,7 +13,7 @@ struct OptionalIntegrationTests {
             return
         }
 
-        let config = WalletConfiguration(mintURL: mintURL, unit: "sat")
+        let config = try WalletConfiguration(mintURL: mintURL, unit: "sat")
         let wallet = await CashuWallet(configuration: config)
 
         do {

@@ -103,8 +103,8 @@ Or add it through Xcode:
 ```swift
 import CoreCashu
 
-// Create wallet configuration
-let config = WalletConfiguration(
+// Create wallet configuration (throws if mint URL is malformed)
+let config = try WalletConfiguration(
     mintURL: "https://testnut.cashu.space",
     unit: "sat"
 )
@@ -289,27 +289,32 @@ CoreCashu has completed comprehensive security hardening in preparation for exte
 - **Input Validation**: BIP39 mnemonic validation, proof validation, comprehensive error handling
 
 ### Audit Status
-CoreCashu is **ready for external security audit**. The following have been completed:
-- 660+ tests passing with ~75% code coverage
+CoreCashu is **preparing for external security audit**. The current state of the audit checklist is:
+- ~900 tests passing
 - BIP32/BIP39 implementation verified against official NUT-13 test vectors
-- No force unwraps, force casts, or force try in production code
-- All `@unchecked Sendable` usages documented and audited
-- Zero compiler warnings
+- Force unwraps, force casts, and `try!` removed from production code (Phase 1 of `opus47.md`)
+- `@unchecked Sendable` usages present; audit-friendly justifications still being added (Phase 4 of `opus47.md`)
+- Strict concurrency enabled in debug; release-config enforcement pending (Phase 4 of `opus47.md`)
 
 **Production use with significant funds should await completion of external audit.**
 
 ## Platform Support
 
-### Apple Platforms
+CoreCashu is intentionally platform-agnostic. The full target matrix is:
+
+### Apple Platforms (verified)
 - iOS 17.0+
 - macOS 15.0+
 - tvOS 17.0+
 - watchOS 10.0+
-- visionOS 1.0+
+- visionOS 1.0+ / macCatalyst 17.0+
 
-### Other Platforms
-- Linux (Ubuntu 20.04+, other distributions with Swift 6.0 support)
-- Windows (experimental, with Swift 6.0 toolchain)
+### Linux (in progress)
+- Linux is a first-class target for CoreCashu. Some files currently `import CryptoKit` (Apple-only); migration to a cross-platform hash module is planned and tracked in `opus47.md` Phase 2. Until that lands, Linux builds are not yet green in CI.
+- WebSocket subscriptions (NUT-17) on Linux will require a cross-platform WS client; CoreCashu exposes `WebSocketClientProtocol` for injection and ships `NoOpWebSocketClient` as a default for environments without one.
+
+### Windows
+- Untested. Should work in principle once the Linux work lands, since the same constraints apply (no Apple frameworks).
 
 ## Dependencies
 

@@ -86,7 +86,8 @@ public enum CashuError: Error, Sendable {
     case invalidSecret
     case invalidSignature(String)
     case mismatchedArrayLengths
-    
+    case invalidSpendingCondition(String)
+
     // NUT-14 specific errors
     case invalidPreimage
     case locktimeNotExpired
@@ -170,7 +171,7 @@ extension CashuError {
              .syncRequired, .operationTimeout, .operationCancelled, .invalidMintConfiguration,
              .keysetNotFound, .keysetExpired, .unsupportedOperation, .concurrencyError,
              .unsupportedVersion, .invalidMnemonic, .invalidSecret,
-             .mismatchedArrayLengths, .invalidPreimage,
+             .mismatchedArrayLengths, .invalidSpendingCondition, .invalidPreimage,
              .locktimeNotExpired, .invalidProofType, .invalidWitness, .noActiveKeyset,
              .quotePending, .quoteExpired, .quoteNotFound, .keysetInactive,
              .invalidUnit, .invalidDenomination, .invalidDerivationPath,
@@ -332,6 +333,8 @@ extension CashuError: LocalizedError {
             return "Invalid signature: \(message)"
         case .mismatchedArrayLengths:
             return "Mismatched array lengths"
+        case .invalidSpendingCondition(let detail):
+            return "Invalid spending condition: \(detail)"
             
         // NUT-14 errors
         case .invalidPreimage:

@@ -17,6 +17,8 @@ public struct WalletConfiguration: Sendable {
     public let retryAttempts: Int
     public let retryDelay: TimeInterval
     public let operationTimeout: TimeInterval
+    /// Validated mint URL. Guaranteed non-nil because the initializer rejects malformed URLs.
+    public let mintURLValue: URL
     #if canImport(Security) && !os(Linux)
     /// Optional Keychain access-control policy to apply when CoreCashu provisions its default secure store on Apple platforms.
     public let keychainAccessControl: KeychainSecureStore.Configuration.AccessControlPolicy?
@@ -24,14 +26,15 @@ public struct WalletConfiguration: Sendable {
         KeychainSecureStore.Configuration(accessControl: keychainAccessControl)
     }
     #endif
-    
+
     /// Creates a new wallet configuration.
     /// - Parameters:
-    ///   - mintURL: Base URL of the target mint.
+    ///   - mintURL: Base URL of the target mint. Must be a syntactically valid `http`/`https` URL.
     ///   - unit: Display unit for balances (defaults to sat).
     ///   - retryAttempts: Maximum retry attempts for idempotent requests.
     ///   - retryDelay: Delay between retries in seconds.
     ///   - operationTimeout: Timeout for network operations in seconds.
+    /// - Throws: ``CashuError/invalidMintURL`` if `mintURL` cannot be parsed or has an unsupported scheme.
     #if canImport(Security) && !os(Linux)
     ///   - keychainAccessControl: Optional Keychain access-control policy applied to the default secure store.
     public init(
@@ -41,7 +44,8 @@ public struct WalletConfiguration: Sendable {
         retryDelay: TimeInterval = 1.0,
         operationTimeout: TimeInterval = 30.0,
         keychainAccessControl: KeychainSecureStore.Configuration.AccessControlPolicy? = nil
-    ) {
+    ) throws {
+        self.mintURLValue = try Self.validate(mintURL: mintURL)
         self.mintURL = mintURL
         self.unit = unit
         self.retryAttempts = retryAttempts
@@ -56,7 +60,8 @@ public struct WalletConfiguration: Sendable {
         retryAttempts: Int = 3,
         retryDelay: TimeInterval = 1.0,
         operationTimeout: TimeInterval = 30.0
-    ) {
+    ) throws {
+        self.mintURLValue = try Self.validate(mintURL: mintURL)
         self.mintURL = mintURL
         self.unit = unit
         self.retryAttempts = retryAttempts
@@ -64,6 +69,16 @@ public struct WalletConfiguration: Sendable {
         self.operationTimeout = operationTimeout
     }
     #endif
+
+    private static func validate(mintURL: String) throws -> URL {
+        guard let url = URL(string: mintURL),
+              let scheme = url.scheme?.lowercased(),
+              scheme == "http" || scheme == "https",
+              url.host?.isEmpty == false else {
+            throw CashuError.invalidMintURL
+        }
+        return url
+    }
 }
 
 // MARK: - Wallet State
@@ -117,11 +132,11 @@ public enum WalletState: Sendable, Equatable {
 /// Create and initialize a wallet:
 ///
 /// ```swift
-/// let config = WalletConfiguration(
+/// let config = try WalletConfiguration(
 ///     mintURL: "https://mint.example.com",
-///     unit: .sat
+///     unit: "sat"
 /// )
-/// 
+///
 /// let wallet = await CashuWallet(configuration: config)
 /// try await wallet.initializeWallet()
 /// ```
@@ -245,11 +260,12 @@ public actor CashuWallet {
     /// - Parameters:
     ///   - mintURL: The mint URL
     ///   - unit: Currency unit (defaults to "sat")
+    /// - Throws: ``CashuError/invalidMintURL`` if `mintURL` cannot be parsed.
     public init(
         mintURL: String,
         unit: String = "sat"
-    ) async {
-        let config = WalletConfiguration(mintURL: mintURL, unit: unit)
+    ) async throws {
+        let config = try WalletConfiguration(mintURL: mintURL, unit: unit)
         await self.init(configuration: config, networking: URLSession.shared)
     }
     
@@ -604,7 +620,7 @@ public actor CashuWallet {
         // Store access tokens securely if secure store is available
         if let secureStore = secureStore {
             let tokenStrings = tokens.map { $0.secret }
-            try await secureStore.saveAccessTokenList(tokenStrings, mintURL: URL(string: configuration.mintURL)!)
+            try await secureStore.saveAccessTokenList(tokenStrings, mintURL: configuration.mintURLValue)
         }
         
         return tokens
@@ -635,7 +651,7 @@ public actor CashuWallet {
         
         // Try to load from secure store if available
         if let secureStore = secureStore {
-            let stored = (try? await secureStore.loadAccessTokenList(mintURL: URL(string: configuration.mintURL)!)) ?? []
+            let stored = (try? await secureStore.loadAccessTokenList(mintURL: configuration.mintURLValue)) ?? []
             if let tokenString = stored.first {
                 // NOTE: Proof reconstruction from stored token string is handled by ProofManager
                 return AccessToken(access: tokenString)

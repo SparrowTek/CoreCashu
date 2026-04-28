@@ -38,6 +38,8 @@ Violations of these assumptions may lead to security failures that CoreCashu can
 - Relies on filesystem permissions for secret protection
 - No hardware-backed secure storage by default
 - Process isolation depends on deployment environment
+- **`FileSecureStore` requires a password (or other key-protection mechanism).** As of 2026-04-28 (Phase 3.5 of `opus47.md`), the no-password convenience initializer is gone. A `Configuration` that has neither a password nor `allowEphemeralUnprotectedKey: true` will throw `SecureStoreError.passwordRequired` at bootstrap. The unprotected ephemeral mode (random AES key written next to the ciphertext) is opt-in via `FileSecureStore.ephemeralUnprotected(directory:)` and is intended only for tests and sandboxed environments where another layer (full-disk encryption, container isolation, OS keyring) provides confidentiality. **Do not use the unprotected mode in production.** A password derives the AES key via PBKDF2-HMAC-SHA-256, so the key never lives on disk in clear form.
+- On non-Apple platforms `CashuWallet`'s default `secureStore` is `nil`. Operations that require secure storage will throw if the consumer did not explicitly inject one. This is the "fail closed" default for non-Apple deployments.
 
 **WASM (Future):**
 - No persistent secure storage available

@@ -8,7 +8,6 @@
 
 import Foundation
 import P256K
-import CryptoKit
 
 /// NUT-02: Keysets and fees
 /// This NUT defines the keyset and fee structure for Cashu mints
@@ -129,8 +128,8 @@ public struct KeysetID {
         }
         
         // Hash the concatenated keys
-        let hash = SHA256.hash(data: concatenatedKeys)
-        let hashHex = Data(hash).hexString
+        let hash = Hash.sha256(concatenatedKeys)
+        let hashHex = hash.hexString
         
         // Take first 14 characters and prefix with version
         let keysetID = currentVersion + String(hashHex.prefix(14))

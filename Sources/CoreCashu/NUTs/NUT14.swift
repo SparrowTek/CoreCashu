@@ -6,7 +6,6 @@
 //
 
 import Foundation
-import CryptoKit
 import P256K
 
 // MARK: - HTLC Types
@@ -135,8 +134,7 @@ public struct HTLCVerifier: Sendable {
             throw CashuError.invalidPreimage
         }
         
-        let hash = SHA256.hash(data: preimageData)
-        let computedHash = Data(hash)
+        let computedHash = Hash.sha256(preimageData)
         
         // Compare using constant-time comparison for defense in depth
         guard let lockData = Data(hexString: hashLock.lowercased()) else {
@@ -298,8 +296,7 @@ extension HTLCWitness {
         }
         
         // Hash the message with SHA256 (BIP340 signs 32-byte messages)
-        let messageHash = SHA256.hash(data: messageData)
-        var messageBytes = Array(messageHash)
+        var messageBytes = Array(Hash.sha256(messageData))
 
         // Create Schnorr private key
         let schnorrPrivateKey = try P256K.Schnorr.PrivateKey(dataRepresentation: privateKeyData)
@@ -347,8 +344,7 @@ public struct HTLCCreator: Sendable {
         let nonce = try generateNonce()
         
         // Calculate hash lock
-        let hashLock = SHA256.hash(data: preimage)
-        let hashLockHex = Data(hashLock).hexString
+        let hashLockHex = Hash.sha256(preimage).hexString
         
         // Build tags
         var tags: [[String]] = []

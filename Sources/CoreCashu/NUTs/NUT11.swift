@@ -1,5 +1,4 @@
 import Foundation
-import CryptoKit
 import P256K
 
 public enum SignatureFlag: String, CaseIterable, Sendable {
@@ -232,7 +231,7 @@ public struct P2PKSignatureValidator {
     ) -> Bool {
         // NUT-11 specifies libsecp256k1 64-byte Schnorr signatures over SHA-256 of the message.
         // Delegate to the BIP340 path used by NUT-20 to keep one Schnorr chokepoint.
-        let messageHash = Data(SHA256.hash(data: messageBytes))
+        let messageHash = Hash.sha256(messageBytes)
         do {
             return try NUT20SignatureManager.verifySignature(
                 signature: signature,

@@ -152,7 +152,7 @@ struct NUT13Tests {
     @Test("Wallet restoration from secure store")
     func testRestoreFromSecureStore() async throws {
         let mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
-        let secureStore = try await FileSecureStore(directory: temporaryDirectory())
+        let secureStore = try await FileSecureStore.ephemeralUnprotected(directory: temporaryDirectory())
         try await secureStore.saveMnemonic(mnemonic)
         
         let configuration = try WalletConfiguration(mintURL: "https://test.mint.example.com")

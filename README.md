@@ -202,15 +202,17 @@ public protocol WebSocketClientProtocol: Sendable {
 
 ### Platform-Specific Implementations
 
-For Apple platforms, you might use:
-- Keychain for `SecureStore`
-- os.log for `LoggerProtocol`
-- URLSession for `WebSocketClientProtocol`
+For Apple platforms, CoreCashu defaults to:
+- `KeychainSecureStore` for `SecureStore` (provided by CoreCashu under `#if canImport(Security)`)
+- `OSLogger` for `LoggerProtocol` (provided by CoreCashu under `#if canImport(os)`)
+- `URLSession` for HTTP via `URLSession.shared`
+- WebSockets: inject `WebSocketClientProtocol`. CashuKit provides an Apple `URLSessionWebSocketTask`-based implementation.
 
-For Linux, you might use:
-- File system with encryption for `SecureStore`
-- Custom file logging for `LoggerProtocol`
-- SwiftNIO for `WebSocketClientProtocol`
+For Linux, you must provide:
+- `FileSecureStore(password:)` (or another `SecureStore`) — the no-password default is gone (Phase 3.5). PBKDF2-HMAC-SHA-256 derives the AES key from the password.
+- `ConsoleLogger` (provided) or your own `LoggerProtocol`.
+- `URLSession` for HTTP works via `FoundationNetworking`.
+- WebSockets: inject your own `WebSocketClientProtocol` (e.g., `swift-nio`/`async-http-client`-backed) or accept `NoOpWebSocketClientProtocol`.
 
 ### Default Implementations
 
@@ -310,12 +312,14 @@ CoreCashu is intentionally platform-agnostic. The full target matrix is:
 - watchOS 10.0+
 - visionOS 1.0+ / macCatalyst 17.0+
 
-### Linux (in progress)
-- Linux is a first-class target for CoreCashu. Some files currently `import CryptoKit` (Apple-only); migration to a cross-platform hash module is planned and tracked in `opus47.md` Phase 2. Until that lands, Linux builds are not yet green in CI.
-- WebSocket subscriptions (NUT-17) on Linux will require a cross-platform WS client; CoreCashu exposes `WebSocketClientProtocol` for injection and ships `NoOpWebSocketClient` as a default for environments without one.
+### Linux
+- Linux is a first-class target for CoreCashu. As of Phase 3 of `opus47.md`, all `CryptoKit` usage has been replaced by the cross-platform `Hash` module (CryptoSwift-backed). Apple-only frameworks (`Security`, `os.log`, `CryptoKit`) are guarded with `#if canImport(...)`; the code paths that depend on them no-op or are absent on Linux.
+- **HTTP** uses `URLSession` (available on Linux through `FoundationNetworking`) — no extra dependency needed for the request/response path. Bring your own `HTTPClientProtocol` if you want a different transport.
+- **WebSocket subscriptions (NUT-17)** are an opt-in feature. CoreCashu defines `WebSocketClientProtocol` and ships `NoOpWebSocketClientProtocol` as a default. On Apple, CashuKit provides a `URLSessionWebSocketTask`-based implementation. On Linux, inject your own implementation (e.g., wrapping `swift-nio` / `async-http-client`). The internal `NUT17WebSocketClient` type uses `URLSessionWebSocketTask` directly and is best-tested on Apple.
+- **Secure storage** on non-Apple platforms requires a password (or other key-protection mechanism). `FileSecureStore(password:)` derives the AES key via PBKDF2-HMAC-SHA-256. The previous no-password default has been removed (Phase 3.5) — see [`Docs/security_assumptions.md`](Docs/security_assumptions.md). On non-Apple platforms `CashuWallet`'s default `secureStore` is `nil`; consumers must inject one explicitly.
 
 ### Windows
-- Untested. Should work in principle once the Linux work lands, since the same constraints apply (no Apple frameworks).
+- Untested. Should work in principle once the Linux work is verified in CI, since the same constraints apply (no Apple frameworks).
 
 ## Dependencies
 

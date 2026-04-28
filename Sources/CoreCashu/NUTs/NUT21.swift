@@ -7,7 +7,6 @@
 //
 
 import Foundation
-import CryptoKit
 
 // MARK: - NUT-21: Clear Authentication
 

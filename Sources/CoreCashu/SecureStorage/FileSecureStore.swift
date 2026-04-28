@@ -42,6 +42,15 @@ public actor FileSecureStore: SecureStore {
         public var keyMaterialFileName: String
         public var pbkdfRounds: Int
         public var nonceLength: Int
+        /// When `true` and `password` is nil, `FileSecureStore` will generate a random AES key
+        /// and persist it next to the encrypted payloads.
+        ///
+        /// **This is not encryption against an attacker who can read the storage directory** —
+        /// the key sits beside the ciphertext. It exists to support tests, ephemeral
+        /// environments, and scenarios where another process supplies file-system-level
+        /// protection (FDE, sandboxing). Production deployments must supply a password (or a
+        /// future key-provider hook) and leave this `false`.
+        public var allowEphemeralUnprotectedKey: Bool
 
         public init(
             directory: URL? = nil,
@@ -49,7 +58,8 @@ public actor FileSecureStore: SecureStore {
             fileNames: FileNames = .default,
             keyMaterialFileName: String = "secure_store_master_key.json",
             pbkdfRounds: Int = CryptoConstants.pbkdfRounds,
-            nonceLength: Int = CryptoConstants.gcmNonceLength
+            nonceLength: Int = CryptoConstants.gcmNonceLength,
+            allowEphemeralUnprotectedKey: Bool = false
         ) {
             self.directory = directory
             self.password = password
@@ -57,6 +67,7 @@ public actor FileSecureStore: SecureStore {
             self.keyMaterialFileName = keyMaterialFileName
             self.pbkdfRounds = pbkdfRounds
             self.nonceLength = nonceLength
+            self.allowEphemeralUnprotectedKey = allowEphemeralUnprotectedKey
         }
     }
 
@@ -106,9 +117,30 @@ public actor FileSecureStore: SecureStore {
 
     // MARK: - Lifecycle
 
-    public init(directory: URL? = nil, password: String? = nil) async throws {
+    /// Convenience initializer requiring a password. Refuses to bootstrap without one.
+    ///
+    /// To opt into the unprotected ephemeral mode (random key written next to ciphertext),
+    /// construct a `Configuration` with `allowEphemeralUnprotectedKey: true` and pass it to
+    /// `init(configuration:)`. That path is intended for tests and sandboxed environments —
+    /// see `Docs/security_assumptions.md`.
+    public init(directory: URL? = nil, password: String) async throws {
+        guard !password.isEmpty else {
+            throw SecureStoreError.passwordRequired
+        }
         let configuration = Configuration(directory: directory, password: password)
         try await self.init(configuration: configuration)
+    }
+
+    /// Test/CI/sandboxed-environment factory: opts into the unprotected ephemeral key mode
+    /// explicitly. Do not use in production. Visible at the type level so call sites read
+    /// honestly: `FileSecureStore.ephemeralUnprotected(directory: ...)`.
+    public static func ephemeralUnprotected(directory: URL? = nil) async throws -> FileSecureStore {
+        let config = Configuration(
+            directory: directory,
+            password: nil,
+            allowEphemeralUnprotectedKey: true
+        )
+        return try await FileSecureStore(configuration: config)
     }
 
     public init(configuration: Configuration) async throws {
@@ -456,6 +488,13 @@ public actor FileSecureStore: SecureStore {
         keyURL: URL,
         overwrite: Bool
     ) throws -> KeyState {
+        // Fail-closed: new master keys are only minted when there's a real protection mechanism.
+        // The unprotected fallback (random AES key written alongside the ciphertext) must be
+        // explicitly opted into via `Configuration.allowEphemeralUnprotectedKey`.
+        if configuration.password == nil, !configuration.allowEphemeralUnprotectedKey {
+            throw SecureStoreError.passwordRequired
+        }
+
         if overwrite, FileManager.default.fileExists(atPath: keyURL.path) {
             try FileManager.default.removeItem(at: keyURL)
         }
@@ -517,15 +556,11 @@ public actor FileSecureStore: SecureStore {
 // MARK: - Convenience factories
 
 public extension FileSecureStore {
-    static func `default`() async throws -> FileSecureStore {
-        try await FileSecureStore()
-    }
-
     static func withPassword(_ password: String) async throws -> FileSecureStore {
         try await FileSecureStore(password: password)
     }
 
-    static func withDirectory(_ directory: URL, password: String? = nil) async throws -> FileSecureStore {
+    static func withDirectory(_ directory: URL, password: String) async throws -> FileSecureStore {
         try await FileSecureStore(directory: directory, password: password)
     }
 }

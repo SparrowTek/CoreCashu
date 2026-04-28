@@ -9,7 +9,7 @@ struct FileSecureStoreTests {
     @Test("Mnemonic and seed persistence")
     func mnemonicAndSeedPersistence() async throws {
         let directory = try temporaryDirectory()
-        let store = try await FileSecureStore(directory: directory)
+        let store = try await FileSecureStore.ephemeralUnprotected(directory: directory)
 
         let mnemonic = "abandon ability able about above absent absorb abstract absurd abuse"
         let seed = "deadbeef"
@@ -33,7 +33,7 @@ struct FileSecureStoreTests {
     @Test("Access token persistence")
     func accessTokenPersistence() async throws {
         let directory = try temporaryDirectory()
-        let store = try await FileSecureStore(directory: directory)
+        let store = try await FileSecureStore.ephemeralUnprotected(directory: directory)
         let mint = URL(string: "https://mint.example.com")!
 
         try await store.saveAccessToken("tokenA", mintURL: mint)
@@ -52,7 +52,7 @@ struct FileSecureStoreTests {
     @Test("Key rotation re-encrypts data")
     func keyRotationReencryptsData() async throws {
         let directory = try temporaryDirectory()
-        let store = try await FileSecureStore(directory: directory)
+        let store = try await FileSecureStore.ephemeralUnprotected(directory: directory)
         let fileURL = directory.appendingPathComponent("mnemonic.enc")
 
         try await store.saveMnemonic("abandon ability able about above absent absorb abstract absurd abuse")
@@ -63,6 +63,20 @@ struct FileSecureStoreTests {
         let rotatedCiphertext = try Data(contentsOf: fileURL)
         #expect(originalCiphertext != rotatedCiphertext)
         #expect(try await store.loadMnemonic() == "abandon ability able about above absent absorb abstract absurd abuse")
+    }
+
+    @Test("FileSecureStore fails closed without a password (Phase 3.5 regression)")
+    func failsClosedWithoutPassword() async throws {
+        let directory = try temporaryDirectory()
+        // Empty password is rejected by the convenience initializer.
+        await #expect(throws: SecureStoreError.self) {
+            _ = try await FileSecureStore(directory: directory, password: "")
+        }
+        // Configuration with no password and no opt-in is rejected at bootstrap.
+        let config = FileSecureStore.Configuration(directory: directory, password: nil)
+        await #expect(throws: SecureStoreError.self) {
+            _ = try await FileSecureStore(configuration: config)
+        }
     }
 
     @Test("Password protected store survives rotation")

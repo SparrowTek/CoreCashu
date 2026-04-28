@@ -232,15 +232,14 @@ public actor CashuWallet {
             self.secureStore = KeychainSecureStore(configuration: configuration.keychainConfiguration)
         }
         #else
-        if let secureStore {
-            self.secureStore = secureStore
-        } else if let fileStore = try? await FileSecureStore() {
-            self.secureStore = fileStore
-        } else {
-            self.secureStore = nil
-        }
+        // On non-Apple platforms there is no system-protected default secure store. We deliberately
+        // do *not* spin up a `FileSecureStore` with no password — that would write the AES key next
+        // to the ciphertext and provide no protection against a directory-copy attacker. Linux
+        // consumers must inject a `FileSecureStore(password:)` (or another `SecureStore`)
+        // explicitly. Operations that need the secure store will throw if it's nil.
+        self.secureStore = secureStore
         #endif
-        
+
         // Use provided networking or default to URLSession.shared
         self.networking = networking ?? URLSession.shared
 
@@ -249,10 +248,10 @@ public actor CashuWallet {
 
         // Use provided metrics or default to no-op
         self.metrics = metrics ?? NoOpMetricsClient()
-        
+
         // Initialize services
         await setupServices()
-        
+
         // Counter state is managed in-memory by KeysetCounterManager
     }
     
@@ -302,11 +301,9 @@ public actor CashuWallet {
             self.secureStore = KeychainSecureStore(configuration: configuration.keychainConfiguration)
         }
         #else
-        if let secureStore {
-            self.secureStore = secureStore
-        } else {
-            self.secureStore = try await FileSecureStore()
-        }
+        // See note in the other initializer: no password-less default on non-Apple. Caller
+        // must inject `FileSecureStore(password:)` or another `SecureStore`.
+        self.secureStore = secureStore
         #endif
         
         // Use provided networking or default to URLSession.shared

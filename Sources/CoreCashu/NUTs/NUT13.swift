@@ -7,7 +7,6 @@
 
 import Foundation
 import P256K
-import CryptoKit
 import CryptoSwift
 // Using BIP39 implementation from CoreCashu/Utils/BIP39.swift
 import BigInt
@@ -283,14 +282,13 @@ private func createSeedFromMnemonic(mnemonic: String, passphrase: String) -> Dat
     } catch {
         // Fallback to a deterministic but non-standard seed
         let combined = mnemonicData + salt
-        return Data(SHA512.hash(data: combined))
+        return Hash.sha512(combined)
     }
 }
 
 private func createMasterKeyFromSeed(seed: Data) -> Data {
     let key = "Bitcoin seed".data(using: .utf8) ?? Data()
-    // Using our HMAC helper
-    return HMAC.sha512(key: key, data: seed)
+    return Hash.hmacSHA512(key: key, data: seed)
 }
 
 private func deriveChildKeyCustom(parentKey: Data, index: UInt32) throws -> Data {
@@ -315,7 +313,7 @@ private func deriveChildKeyCustom(parentKey: Data, index: UInt32) throws -> Data
     data.append(contentsOf: indexBytes)
     
     // HMAC-SHA512(chainCode, data)
-    let hmac = HMAC.sha512(key: chainCode, data: data)
+    let hmac = Hash.hmacSHA512(key: chainCode, data: data)
     let il = hmac.prefix(32)  // Left 32 bytes
     let childChainCode = hmac.suffix(32)  // Right 32 bytes
     
@@ -437,15 +435,4 @@ extension UInt32 {
         ]
     }
 }
-
-// MARK: - Crypto Helpers
-
-struct HMAC {
-    static func sha512(key: Data, data: Data) -> Data {
-        let key = CryptoKit.SymmetricKey(data: key)
-        let hmac = CryptoKit.HMAC<CryptoKit.SHA512>.authenticationCode(for: data, using: key)
-        return Data(hmac)
-    }
-}
-
 

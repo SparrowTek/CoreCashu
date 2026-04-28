@@ -7,7 +7,6 @@
 //
 
 import Foundation
-import CryptoKit
 @preconcurrency import P256K
 // Note: BitcoinDevKit was previously considered but P256K provides all necessary
 // cryptographic primitives (Schnorr signatures, key derivation) for Cashu NUTs
@@ -168,8 +167,7 @@ public struct NUT20MessageAggregator: Sendable {
         outputs: [BlindedMessage]
     ) -> Data {
         let message = createMessageToSign(quote: quote, outputs: outputs)
-        let messageData = Data(message.utf8)
-        return Data(SHA256.hash(data: messageData))
+        return Hash.sha256(Data(message.utf8))
     }
 }
 

@@ -114,7 +114,13 @@ public enum SecureStoreError: LocalizedError {
     case deletionFailed(String)
     case notImplemented
     case invalidData
-    
+    /// Thrown by `FileSecureStore` when constructed without a password and without explicit
+    /// opt-in to the unprotected ephemeral mode. The default fails closed: callers must pass
+    /// a non-empty `password` (PBKDF2-derived AES key) or set
+    /// `Configuration.allowEphemeralUnprotectedKey = true` after acknowledging the threat
+    /// model in `Docs/security_assumptions.md`.
+    case passwordRequired
+
     public var errorDescription: String? {
         switch self {
         case .storeFailed(let reason):
@@ -127,6 +133,8 @@ public enum SecureStoreError: LocalizedError {
             return "This secure store operation is not implemented"
         case .invalidData:
             return "The data format is invalid"
+        case .passwordRequired:
+            return "FileSecureStore requires a password (or opt-in unprotected mode)"
         }
     }
 }

@@ -7,7 +7,6 @@
 //
 
 import Foundation
-import CryptoKit
 import P256K
 
 // MARK: - NUT-22: Token Metadata for Non-Custodial Wallet Authentication

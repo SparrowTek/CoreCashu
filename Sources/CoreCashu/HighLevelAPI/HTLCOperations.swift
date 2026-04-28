@@ -1,5 +1,4 @@
 import Foundation
-import CryptoKit
 import P256K
 
 /// High-level API for Hash Time-Locked Contracts (HTLCs) in Cashu
@@ -28,9 +27,8 @@ public extension CashuWallet {
         }
 
         // Generate preimage if not provided
-        let actualPreimage = preimage ?? Data(SHA256.hash(data: Data(UUID().uuidString.utf8)))
-        let hashLock = SHA256.hash(data: actualPreimage)
-        let hashLockHex = hashLock.compactMap { String(format: "%02x", $0) }.joined()
+        let actualPreimage = preimage ?? Hash.sha256(Data(UUID().uuidString.utf8))
+        let hashLockHex = Hash.sha256(actualPreimage).hexString
 
         // Select proofs for the amount
         let selectedProofs = try await selectProofsForAmount(amount)
@@ -222,9 +220,7 @@ public extension CashuWallet {
         //
         // The message to sign is the concatenation of all proof secrets
         let message = proofs.map { $0.secret }.joined()
-        let messageData = Data(message.utf8)
-        let messageHash = SHA256.hash(data: messageData)
-        let messageHashData = Data(messageHash)
+        let messageHashData = Hash.sha256(Data(message.utf8))
 
         // Parse the private key from hex string
         guard let privateKeyData = Data(hexString: privateKey) else {

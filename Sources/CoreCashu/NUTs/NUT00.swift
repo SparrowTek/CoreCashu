@@ -8,7 +8,6 @@
 
 import Foundation
 @preconcurrency import P256K
-import CryptoKit
 
 /// NUT-00: Blind Diffie-Hellman Key Exchange (BDHKE)
 ///
@@ -60,7 +59,7 @@ public func hashToCurve(_ message: Data) throws -> P256K.KeyAgreement.PublicKey 
         guard let DOMAIN_SEPARATOR = "Secp256k1_HashToCurve_Cashu_".data(using: .utf8) else { throw CashuError.domainSeperator }
 
         // Create message hash: SHA256(DOMAIN_SEPARATOR || x)
-        let msgHash = SHA256.hash(data: DOMAIN_SEPARATOR + message)
+        let msgHash = Hash.sha256(DOMAIN_SEPARATOR + message)
 
         // Try different counter values until we find a valid point
         for counter in 0..<UInt32.max {
@@ -68,7 +67,7 @@ public func hashToCurve(_ message: Data) throws -> P256K.KeyAgreement.PublicKey 
             let counterBytes = withUnsafeBytes(of: counter.littleEndian) { Data($0) }
 
             // Create candidate: SHA256(msg_hash || counter)
-            let candidate = SHA256.hash(data: Data(msgHash) + counterBytes)
+            let candidate = Hash.sha256(msgHash + counterBytes)
 
             // Try to create a public key with prefix '02' (compressed format)
             let candidateWithPrefix = Data([0x02]) + candidate

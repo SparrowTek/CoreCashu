@@ -8,7 +8,6 @@
 
 import Foundation
 @preconcurrency import P256K
-import CryptoKit
 import BigInt
 
 // MARK: - NUT-12: Offline ecash signature validation
@@ -189,8 +188,7 @@ public func hashDLEQ(_ publicKeys: P256K.KeyAgreement.PublicKey...) throws -> Da
         concatenated += uncompressedData.hexString
     }
     
-    let hash = SHA256.hash(data: Data(concatenated.utf8))
-    return Data(hash)
+    return Hash.sha256(Data(concatenated.utf8))
 }
 
 // MARK: - DLEQ Proof Generation (Mint Side)

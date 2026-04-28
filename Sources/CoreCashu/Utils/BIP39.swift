@@ -7,7 +7,7 @@
 //
 
 import Foundation
-import CryptoKit
+import CryptoSwift
 
 /// BIP39 Mnemonic implementation for cross-platform use
 public enum BIP39 {
@@ -151,8 +151,7 @@ public enum BIP39 {
         }
         
         // Calculate checksum
-        let hash = SHA256.hash(data: entropy)
-        let hashBytes = Array(hash)
+        let hashBytes = Array(Hash.sha256(entropy))
         let checksumByte = hashBytes[0]
         let checksumBits = strength.checksumBits
         
@@ -238,8 +237,7 @@ public enum BIP39 {
         let entropy = Data(entropyBytes)
         
         // Verify checksum
-        let hash = SHA256.hash(data: entropy)
-        let hashBytes = Array(hash)
+        let hashBytes = Array(Hash.sha256(entropy))
         let expectedChecksumByte = hashBytes[0]
         let expectedChecksumBits = String(expectedChecksumByte, radix: 2)
             .padLeft(toLength: 8, withPad: "0")
@@ -301,39 +299,19 @@ private func pbkdf2SHA512(password: Data, salt: Data, iterations: Int, keyLength
     precondition(iterations > 0, "PBKDF2 requires at least one iteration")
     precondition(keyLength > 0, "PBKDF2 requires a positive key length")
 
-    let hmacLength = 64 // SHA512 output size
-    let blockCount = Int(ceil(Double(keyLength) / Double(hmacLength)))
-    let key = CryptoKit.SymmetricKey(data: password)
-    var derived = Data()
-
-    for blockIndex in 1...blockCount {
-        var saltBlock = salt
-        var bigEndianIndex = UInt32(blockIndex).bigEndian
-        withUnsafeBytes(of: &bigEndianIndex) { saltBlock.append(contentsOf: $0) }
-
-        var u = Data(CryptoKit.HMAC<CryptoKit.SHA512>.authenticationCode(for: saltBlock, using: key))
-        var t = u
-
-        if iterations > 1 {
-            for _ in 2...iterations {
-                u = Data(CryptoKit.HMAC<CryptoKit.SHA512>.authenticationCode(for: u, using: key))
-                xorInPlace(&t, with: u)
-            }
-        }
-
-        derived.append(t)
-    }
-
-    return derived.prefix(keyLength)
-}
-
-private func xorInPlace(_ lhs: inout Data, with rhs: Data) {
-    precondition(lhs.count == rhs.count, "PBKDF2 XOR buffers must match in length")
-    lhs.withUnsafeMutableBytes { lhsBuffer in
-        rhs.withUnsafeBytes { (rhsBuffer: UnsafeRawBufferPointer) in
-            for index in 0..<lhsBuffer.count {
-                lhsBuffer[index] ^= rhsBuffer[index]
-            }
-        }
+    // Cross-platform via CryptoSwift's spec-correct PKCS#5 PBKDF2-HMAC-SHA-512.
+    // The PKCS5.PBKDF2 initializer can throw if the key length exceeds (2^32 - 1) * hLen,
+    // which is far beyond any sane caller — treat as programmer error.
+    do {
+        let derived = try PKCS5.PBKDF2(
+            password: Array(password),
+            salt: Array(salt),
+            iterations: iterations,
+            keyLength: keyLength,
+            variant: .sha2(.sha512)
+        ).calculate()
+        return Data(derived)
+    } catch {
+        preconditionFailure("PBKDF2-HMAC-SHA-512 setup failed: \(error)")
     }
 }

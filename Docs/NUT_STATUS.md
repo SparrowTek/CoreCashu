@@ -1,6 +1,6 @@
 # NUT Status Matrix
 
-**Last updated:** 2026-04-28 (Phase 2 of `/opus47.md`)
+**Last updated:** 2026-04-28 (Phase 4 of `/opus47.md`)
 
 This document tracks CoreCashu's implementation status against upstream
 [`cashubtc/nuts`](https://github.com/cashubtc/nuts). The local snapshot in
@@ -40,11 +40,11 @@ exist or are not yet wired in.
 | NUT | Title | Implemented | Vectors | Public API | Capability flag | Notes |
 |---:|------|:----:|:----:|:----:|:----:|------|
 | 09 | Wallet restore from seed | 🟡 | — | partial | flag | Basic restore flow present; deeper recovery scenarios not exercised. |
-| 10 | Spending conditions (well-known secret) | ✅ | ✅ Pass | types only | flag | Conditions schema works; no high-level wallet API (Phase 4.2). |
-| 11 | P2PK | ✅ | ✅ Pass | partial | flag | **Phase 2.1 fixed the consensus bug** — was verifying with Curve25519 instead of secp256k1 BIP340 Schnorr. Multisig duplicate-key check added. High-level `wallet.send(to publicKey:)` API still pending (Phase 4.2). |
+| 10 | Spending conditions (well-known secret) | ✅ | ✅ Pass | ✅ | flag | Phase 4 wired the schema through `SwapService.prepareSwapToSend(targetSecretFactory:)` so locked outputs can be minted via the public wallet API. |
+| 11 | P2PK | ✅ | ✅ Pass | ✅ | flag | **Phase 2.1 fixed the consensus bug** (Curve25519 → secp256k1 BIP340 Schnorr) and **Phase 4.A added the high-level wallet API** — `CashuWallet.sendLocked(amount:to:locktime:refundPubkeys:requiredSigs:additionalPubkeys:signatureFlag:memo:)` and `CashuWallet.unlockP2PK(token:privateKey:)`. Multisig signature accounting credits each distinct signer at most once; duplicate pubkeys rejected at construction. The spec's official "valid signature" vector (`60f3c9b766770b...`) now verifies under our Schnorr path — see `NUT11Tests`. |
 | 12 | DLEQ proofs | ✅ | ✅ Pass | ✅ | flag | |
 | 13 | Deterministic secrets (BIP39/BIP32) | ✅ | ✅ Pass | ✅ | n/a | |
-| 14 | HTLC | 🟡 | — | types only | flag | Primitives present; high-level swap/atomic flows pending (Phase 4.2). |
+| 14 | HTLC | ✅ | — | ✅ | flag | **Phase 4.C rewrote `HTLCOperations.swift`** to plumb the HTLC secret through swap (was generating a secret then discarding it). `createHTLC` now produces actually-locked outputs via the same `targetSecretFactory` path used by NUT-11. `redeemHTLC` attaches a real `HTLCWitness` per locked proof and submits a swap. `refundHTLC` signs each proof's secret with BIP340 Schnorr (was ECDSA — wrong curve) and submits with a refund-form witness. Live-mint integration tests (`HTLCIntegrationTests`) remain `.disabled` until Phase 6's mock mint lands. |
 | 15 | Multi-path payments | 🟡 | — | partial | flag | MPP primitives present; routing/pathfinding incomplete. **Will not ship in 1.0** — keep capability flag off. |
 | 16 | Animated QR codes | 🟡 | — | partial | flag | Frame generation present; animation/UX layer belongs in CashuKit. |
 | 17 | WebSocket subscriptions | 🟡 | — | partial | flag | `RobustWebSocketClient`, `ReconnectionStrategy` present. Apple-platform only until cross-platform WS lands (Phase 3). |
@@ -94,3 +94,12 @@ adds or revises a NUT, an issue should be opened to triage scope.
 - **2026-04-28** — initial matrix. Phase 2.1, 2.2, 2.5 landed (NUT-11,
   NUT-19, NUT-24 fixes). Phase 2.3 (NUT-21 JWT verification) and Phase 2.4
   (NUT-22 endpoint+DLEQ) tracked but not yet implemented.
+- **2026-04-28** — Phase 4 update. NUT-10 promoted to "complete" (the schema
+  now flows through `prepareSwapToSend`'s `targetSecretFactory` hook). NUT-11
+  promoted to "complete with public API" — `CashuWallet.sendLocked` /
+  `unlockP2PK` added; the spec's exact signature vector cryptographically
+  verifies under the Phase 2.1 Schnorr path. NUT-14 HTLC ops were
+  rewritten to actually plumb the witness through swap (the previous
+  implementation generated the HTLC secret and then discarded it). NUT-21
+  (JWT) and NUT-22 (BAT endpoint+DLEQ) remain deferred to a follow-on
+  session.

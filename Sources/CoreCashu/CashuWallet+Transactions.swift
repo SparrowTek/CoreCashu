@@ -144,7 +144,8 @@ public extension CashuWallet {
             let (sendProofs, changeProofs) = try partitionSwapOutputs(
                 swapResult.newProofs,
                 targetAmount: amount,
-                targetDenominations: preparation.targetOutputDenominations
+                targetDenominations: preparation.targetOutputDenominations,
+                targetSecrets: preparation.targetSecrets
             )
 
             try await proofManager.finalizePendingSpent(preparation.inputProofs)
@@ -284,10 +285,32 @@ extension CashuWallet {
     private func partitionSwapOutputs(
         _ newProofs: [Proof],
         targetAmount: Int,
-        targetDenominations: [Int]
+        targetDenominations: [Int],
+        targetSecrets: Set<String> = []
     ) throws -> (sendProofs: [Proof], changeProofs: [Proof]) {
         guard !newProofs.isEmpty else {
             throw CashuError.invalidState("Swap returned no proofs")
+        }
+
+        // When the wallet locked the target outputs, identification by `secret` is exact:
+        // each target proof carries the locked NUT-10 well-known secret and change proofs do
+        // not. Denomination-based matching breaks down when target and change share a
+        // denomination, so prefer secret-based partitioning whenever available.
+        if !targetSecrets.isEmpty {
+            var send: [Proof] = []
+            var change: [Proof] = []
+            for proof in newProofs {
+                if targetSecrets.contains(proof.secret) {
+                    send.append(proof)
+                } else {
+                    change.append(proof)
+                }
+            }
+            let sendTotal = send.reduce(0) { $0 + $1.amount }
+            guard sendTotal == targetAmount else {
+                throw CashuError.invalidState("Swap output partition mismatch (locked path)")
+            }
+            return (send, change)
         }
 
         if !targetDenominations.isEmpty {

@@ -538,20 +538,127 @@ struct NUT11Tests {
             C: "02698c4e2b5f9534cd0687d87513c759790cf829aa5739184a3e3735471fbda904",
             witness: "{\"signatures\":[\"f661d3dc046d636d47cb3d06586da42c498f0300373d1c2a4f417a44252cdf3809bce207c8888f934dba0d2b1671f1b8622d526840f2d5883e571b462630c1ff\"]}"
         )
-        
+
         // Extract and verify P2PK spending condition
         let condition = proof.getP2PKSpendingCondition()
         #expect(condition != nil)
         #expect(condition?.locktime == 21)
         #expect(condition?.refundPubkeys.count == 1)
-        
+
         // Note: In the test vector description, it says this is NOT spendable because the locktime is in the future,
         // but the locktime value is 21 (which would be in the past). This might be a discrepancy in the test vector.
         // The test vector likely assumes a different interpretation or the description is incorrect.
-        
+
         // Extract and verify witness
         let witness = proof.getP2PKWitness()
         #expect(witness != nil)
         #expect(witness?.signatures.count == 1)
+    }
+
+    // MARK: - NUT-11 Spec Vector Cryptographic Verification (Phase 4.B)
+    //
+    // The tests above only verify type extraction. After the Phase 2.1 curve fix
+    // (Curve25519 → secp256k1 BIP340 Schnorr) we can verify the spec's actual
+    // signature bytes against `P2PKSignatureValidator`. These are the official
+    // vectors from `claude/Nuts/tests/11-test.md`.
+
+    /// Spec vector: `Proof` with a valid signature must pass full proof validation.
+    @Test("Spec vector — valid P2PK signature verifies")
+    func testSpecVectorValidSignatureVerifies() throws {
+        let proof = Proof(
+            amount: 1,
+            id: "009a1f293253e41e",
+            secret: "[\"P2PK\",{\"nonce\":\"859d4935c4907062a6297cf4e663e2835d90d97ecdd510745d32f6816323a41f\",\"data\":\"0249098aa8b9d2fbec49ff8598feb17b592b986e62319a4fa488a3dc36387157a7\",\"tags\":[[\"sigflag\",\"SIG_INPUTS\"]]}]",
+            C: "02698c4e2b5f9534cd0687d87513c759790cf829aa5739184a3e3735471fbda904",
+            witness: "{\"signatures\":[\"60f3c9b766770b46caac1d27e1ae6b77c8866ebaeba0b9489fe6a15a837eaa6fcd6eaa825499c72ac342983983fd3ba3a8a41f56677cc99ffd73da68b59e1383\"]}"
+        )
+
+        let condition = try #require(proof.getP2PKSpendingCondition())
+
+        // The cryptographic gate. Pre-Phase-2.1 this would have been verified against
+        // Curve25519 and would not have matched the spec.
+        #expect(P2PKSignatureValidator.validateProofSignatures(
+            proof: proof,
+            condition: condition
+        ) == true)
+    }
+
+    /// Spec vector: a valid signature on a *different* secret must not satisfy the proof's
+    /// spending condition (the condition asks for 2 signatures from a multisig set, and the
+    /// witness only carries one Schnorr that signs the wrong message).
+    @Test("Spec vector — invalid (mismatched-secret) signature is rejected")
+    func testSpecVectorInvalidSignatureRejected() throws {
+        let proof = Proof(
+            amount: 1,
+            id: "009a1f293253e41e",
+            secret: "[\"P2PK\",{\"nonce\":\"0ed3fcb22c649dd7bbbdcca36e0c52d4f0187dd3b6a19efcc2bfbebb5f85b2a1\",\"data\":\"0249098aa8b9d2fbec49ff8598feb17b592b986e62319a4fa488a3dc36387157a7\",\"tags\":[[\"pubkeys\",\"0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798\",\"02142715675faf8da1ecc4d51e0b9e539fa0d52fdd96ed60dbe99adb15d6b05ad9\"],[\"n_sigs\",\"2\"],[\"sigflag\",\"SIG_INPUTS\"]]}]",
+            C: "02698c4e2b5f9534cd0687d87513c759790cf829aa5739184a3e3735471fbda904",
+            witness: "{\"signatures\":[\"83564aca48c668f50d022a426ce0ed19d3a9bdcffeeaee0dc1e7ea7e98e9eff1840fcc821724f623468c94f72a8b0a7280fa9ef5a54a1b130ef3055217f467b3\"]}"
+        )
+
+        let condition = try #require(proof.getP2PKSpendingCondition())
+        #expect(P2PKSignatureValidator.validateProofSignatures(
+            proof: proof,
+            condition: condition
+        ) == false)
+    }
+
+    /// Spec vector: a multisig 2-of-3 spending condition with only one signature must fail
+    /// the threshold even when that one signature is valid for one of the keys.
+    @Test("Spec vector — multisig with insufficient signatures is rejected")
+    func testSpecVectorMultisigInsufficientSignaturesRejected() throws {
+        let proof = Proof(
+            amount: 1,
+            id: "009a1f293253e41e",
+            secret: "[\"P2PK\",{\"nonce\":\"0ed3fcb22c649dd7bbbdcca36e0c52d4f0187dd3b6a19efcc2bfbebb5f85b2a1\",\"data\":\"0249098aa8b9d2fbec49ff8598feb17b592b986e62319a4fa488a3dc36387157a7\",\"tags\":[[\"pubkeys\",\"0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798\",\"02142715675faf8da1ecc4d51e0b9e539fa0d52fdd96ed60dbe99adb15d6b05ad9\"],[\"n_sigs\",\"2\"],[\"sigflag\",\"SIG_INPUTS\"]]}]",
+            C: "02698c4e2b5f9534cd0687d87513c759790cf829aa5739184a3e3735471fbda904",
+            witness: "{\"signatures\":[\"83564aca48c668f50d022a426ce0ed19d3a9bdcffeeaee0dc1e7ea7e98e9eff1840fcc821724f623468c94f72a8b0a7280fa9ef5a54a1b130ef3055217f467b3\"]}"
+        )
+
+        let condition = try #require(proof.getP2PKSpendingCondition())
+        #expect(condition.requiredSigs == 2)
+        #expect(P2PKSignatureValidator.validateProofSignatures(
+            proof: proof,
+            condition: condition
+        ) == false)
+    }
+
+    /// Spec vector roundtrip: sign with a fresh secp256k1 key, verify, then verify that
+    /// flipping a single byte in the signature causes verification to fail.
+    @Test("Roundtrip — signature is rejected when a single byte is flipped")
+    func testRoundtripSingleByteMutationRejected() throws {
+        let privateKey = try P256K.Schnorr.PrivateKey()
+        let publicKeyHex = "02" + privateKey.xonly.bytes.hexString
+
+        let condition = P2PKSpendingCondition(
+            publicKey: publicKeyHex,
+            nonce: WellKnownSecret.generateNonce(),
+            signatureFlag: .sigInputs
+        )
+        let secretString = try condition.toWellKnownSecret().toJSONString()
+
+        var messageBytes = Array(Hash.sha256(Data(secretString.utf8)))
+        var auxRand = Array(try SecureRandom.generateBytes(count: 32))
+        let signature = try auxRand.withUnsafeMutableBytes { auxPtr -> P256K.Schnorr.SchnorrSignature in
+            try privateKey.signature(message: &messageBytes, auxiliaryRand: auxPtr.baseAddress, strict: true)
+        }
+        let goodSig = signature.dataRepresentation.hexString
+        // Sanity: the good signature verifies.
+        #expect(P2PKSignatureValidator.validateSignature(
+            signature: goodSig,
+            publicKey: publicKeyHex,
+            message: secretString
+        ) == true)
+
+        // Flip the last byte of the signature.
+        var bytes = Array(signature.dataRepresentation)
+        bytes[bytes.count - 1] ^= 0x01
+        let mutatedSig = bytes.hexString
+
+        #expect(P2PKSignatureValidator.validateSignature(
+            signature: mutatedSig,
+            publicKey: publicKeyHex,
+            message: secretString
+        ) == false)
     }
 }

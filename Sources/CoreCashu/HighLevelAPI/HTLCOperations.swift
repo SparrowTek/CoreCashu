@@ -1,20 +1,26 @@
 import Foundation
 import P256K
 
-/// High-level API for Hash Time-Locked Contracts (HTLCs) in Cashu
-/// Implements NUT-14 specification
+/// High-level NUT-14 (Hash Time-Locked Contract) wallet operations.
+///
+/// Phase 4 of `opus47.md` finished the wiring: target outputs are now actually HTLC-locked
+/// (the `targetSecretFactory` hook on `SwapService.prepareSwapToSend` carries the HTLC
+/// well-known secret), and redemption/refund attach a real `HTLCWitness` to each proof
+/// before swap. The previous version generated the secret and then discarded it.
 public extension CashuWallet {
 
     // MARK: - HTLC Creation
 
-    /// Create an HTLC-locked token
+    /// Create an HTLC-locked token.
+    ///
     /// - Parameters:
-    ///   - amount: Amount to lock
-    ///   - preimage: The secret preimage (if nil, one will be generated)
-    ///   - locktime: Optional locktime after which refund is allowed
-    ///   - refundKey: Optional public key for refund after locktime
-    ///   - authorizedKeys: Optional list of public keys that can spend with signatures
-    /// - Returns: HTLCToken containing the locked token and metadata
+    ///   - amount: Amount to lock under the hash.
+    ///   - preimage: Optional 32-byte preimage. If nil, a fresh CSPRNG preimage is generated.
+    ///   - locktime: Optional locktime after which `refundKey` may spend.
+    ///   - refundKey: Public key allowed to spend after `locktime`.
+    ///   - authorizedKeys: Optional pubkeys that must co-sign alongside revealing the preimage.
+    /// - Returns: ``HTLCToken`` containing the locked CashuToken (V3-serialized) plus the
+    ///   metadata the recipient needs to redeem.
     func createHTLC(
         amount: Int,
         preimage: Data? = nil,
@@ -22,61 +28,78 @@ public extension CashuWallet {
         refundKey: String? = nil,
         authorizedKeys: [String]? = nil
     ) async throws -> HTLCToken {
-        guard isReady else {
+        guard isReady else { throw CashuError.walletNotInitialized }
+        guard amount > 0 else { throw CashuError.invalidAmount }
+        guard let swapService = await getSwapService() else {
             throw CashuError.walletNotInitialized
         }
 
-        // Generate preimage if not provided
-        let actualPreimage = preimage ?? Hash.sha256(Data(UUID().uuidString.utf8))
+        // SECURITY: preimages must come from a CSPRNG. Validate any caller-supplied preimage
+        // is at least 32 bytes (the spec requires exactly 32; HTLCCreator rejects others).
+        let actualPreimage: Data
+        if let preimage {
+            guard preimage.count == 32 else { throw CashuError.invalidPreimage }
+            actualPreimage = preimage
+        } else {
+            actualPreimage = try HTLCCreator.generatePreimage()
+        }
         let hashLockHex = Hash.sha256(actualPreimage).hexString
 
-        // Select proofs for the amount
-        let selectedProofs = try await selectProofsForAmount(amount)
-        guard selectedProofs.totalValue >= amount else {
-            throw CashuError.insufficientFunds
+        let pubkeys = authorizedKeys ?? []
+        let locktimeUnix: Int64? = locktime.map { Int64($0.timeIntervalSince1970) }
+
+        // The factory is invoked once per target output. `HTLCCreator.createHTLCSecret`
+        // generates a fresh nonce per call, satisfying NUT-10's per-output-randomness rule.
+        let factory: @Sendable () throws -> String = {
+            try HTLCCreator.createHTLCSecret(
+                preimage: actualPreimage,
+                pubkeys: pubkeys,
+                locktime: locktimeUnix,
+                refundKey: refundKey,
+                sigflag: .sigInputs
+            )
         }
 
-        // Build HTLC secret
-        var tags: [[String]] = []
-
-        // Add locktime if provided
-        if let locktime = locktime {
-            let locktimeTimestamp = Int64(locktime.timeIntervalSince1970)
-            tags.append(["locktime", String(locktimeTimestamp)])
-        }
-
-        // Add refund key if provided
-        if let refundKey = refundKey {
-            tags.append(["refund", refundKey])
-        }
-
-        // Add authorized keys if provided
-        if let authorizedKeys = authorizedKeys, !authorizedKeys.isEmpty {
-            tags.append(["pubkeys"] + authorizedKeys)
-        }
-
-        let secretData = WellKnownSecret.SecretData(
-            nonce: Data(UUID().uuidString.utf8).base64URLEncodedString(),
-            data: hashLockHex,
-            tags: tags.isEmpty ? nil : tags
+        let availableProofs = try await getAvailableProofs()
+        let preparation = try await swapService.prepareSwapToSend(
+            availableProofs: availableProofs,
+            targetAmount: amount,
+            unit: configuration.unit,
+            at: configuration.mintURL,
+            targetSecretFactory: factory
         )
 
-        _ = WellKnownSecret(
-            kind: SpendingConditionKind.htlc,
-            secretData: secretData
-        )
+        try await markPendingSpent(preparation.inputProofs)
+        let lockedTokenString: String
+        do {
+            let swapResult = try await swapService.executeCompleteSwap(
+                preparation: preparation,
+                at: configuration.mintURL
+            )
+            let (sendProofs, changeProofs) = try lockedPartition(
+                swapResult.newProofs,
+                targetAmount: amount,
+                targetSecrets: preparation.targetSecrets
+            )
+            try await finalizePendingSpent(preparation.inputProofs)
+            try await markSpent(preparation.inputProofs)
+            try await removeProofs(preparation.inputProofs)
+            if !changeProofs.isEmpty {
+                try await addProofs(changeProofs)
+            }
 
-        // Create the locked token
-        // Note: This is a simplified implementation
-        // Real HTLC implementation would need to properly lock the token with the secret
-        let lockedToken = try await send(amount: amount)
-        let tokenString = try CashuTokenUtils.serializeToken(lockedToken)
-
-        // Metrics recording removed - metrics is private
-        // In a real implementation, we'd need to expose metrics or add a public method
+            let lockedToken = CashuToken(
+                token: [TokenEntry(mint: configuration.mintURL, proofs: sendProofs)],
+                unit: configuration.unit
+            )
+            lockedTokenString = try CashuTokenUtils.serializeToken(lockedToken)
+        } catch {
+            try await rollbackPendingSpent(preparation.inputProofs)
+            throw error
+        }
 
         return HTLCToken(
-            token: tokenString,
+            token: lockedTokenString,
             preimage: actualPreimage,
             hashLock: hashLockHex,
             locktime: locktime,
@@ -88,157 +111,174 @@ public extension CashuWallet {
 
     // MARK: - HTLC Redemption
 
-    /// Redeem an HTLC-locked token using the preimage
+    /// Redeem an HTLC-locked token by revealing the preimage.
+    ///
     /// - Parameters:
-    ///   - token: The HTLC token to redeem
-    ///   - preimage: The secret preimage
-    ///   - signatures: Optional signatures if authorized keys were specified
-    /// - Returns: Array of unlocked proofs
+    ///   - token: The serialized HTLC-locked CashuToken (cashuA/cashuB).
+    ///   - preimage: The 32-byte preimage that hashes to the HTLC's hash lock.
+    ///   - signatures: Optional signatures, required if the HTLC was created with
+    ///     `authorizedKeys`. The caller is responsible for producing these (sign each
+    ///     `proof.secret` under BIP340 Schnorr with the corresponding key).
+    /// - Returns: The unlocked anyone-can-spend proofs added to the wallet.
     func redeemHTLC(
         token: String,
         preimage: Data,
         signatures: [String]? = nil
     ) async throws -> [Proof] {
-        guard isReady else {
+        guard isReady else { throw CashuError.walletNotInitialized }
+        guard let swapService = await getSwapService() else {
             throw CashuError.walletNotInitialized
         }
 
-        // Parse the token
         let cashuToken = try CashuTokenUtils.deserializeToken(token)
-        guard let tokenEntry = cashuToken.token.first else {
-            throw CashuError.invalidToken
-        }
+        let preimageHex = preimage.hexString
 
-        // Create witness
-        let preimageHex = preimage.compactMap { String(format: "%02x", $0) }.joined()
-        let witness = HTLCWitness(
-            preimage: preimageHex,
-            signatures: signatures ?? []
-        )
+        var allUnlocked: [Proof] = []
+        for tokenEntry in cashuToken.token {
+            guard tokenEntry.mint == configuration.mintURL else {
+                throw CashuError.invalidMintConfiguration
+            }
 
-        // Verify the HTLC locally first
-        for proof in tokenEntry.proofs {
-            _ = try HTLCVerifier.verifyHTLC(
-                proof: proof,
-                witness: witness
+            // Pre-flight: verify locally that the preimage hashes to each proof's hash lock.
+            // This catches obvious bugs before we hit the mint and pay round-trip latency.
+            for proof in tokenEntry.proofs {
+                let witness = HTLCWitness(preimage: preimageHex, signatures: signatures ?? [])
+                _ = try HTLCVerifier.verifyHTLC(proof: proof, witness: witness)
+            }
+
+            // Attach the witness to every locked proof. Non-HTLC proofs in a mixed token are
+            // passed through untouched.
+            let witnessedProofs = tokenEntry.proofs.map { proof -> Proof in
+                guard let secret = try? WellKnownSecret.fromString(proof.secret), secret.isHTLC else {
+                    return proof
+                }
+                let witness = HTLCWitness(preimage: preimageHex, signatures: signatures ?? [])
+                let witnessString = (try? Self.encodeHTLCWitness(witness)) ?? ""
+                return Proof(
+                    amount: proof.amount,
+                    id: proof.id,
+                    secret: proof.secret,
+                    C: proof.C,
+                    witness: witnessString,
+                    dleq: proof.dleq
+                )
+            }
+
+            let swapResult = try await swapService.swapToReceive(
+                proofs: witnessedProofs,
+                at: configuration.mintURL
             )
+            try await addProofs(swapResult.newProofs)
+            allUnlocked.append(contentsOf: swapResult.newProofs)
         }
-
-        // In a real implementation, we would swap the proofs with witness
-        // For now, just receive the token normally
-        let unlockedProofs = try await receive(token: cashuToken)
-
-        // Metrics recording removed - metrics is private
-
-        return unlockedProofs
+        return allUnlocked
     }
 
-    /// Refund an expired HTLC using the refund key
+    /// Refund an expired HTLC by signing with the refund key.
+    ///
     /// - Parameters:
-    ///   - token: The HTLC token to refund
-    ///   - refundPrivateKey: The private key corresponding to the refund public key
-    /// - Returns: Array of refunded proofs
+    ///   - token: The serialized HTLC-locked CashuToken.
+    ///   - refundPrivateKey: 32-byte secp256k1 private key, hex-encoded, that corresponds to
+    ///     the HTLC's `refund` tag pubkey.
+    /// - Returns: The refunded anyone-can-spend proofs added to the wallet.
     func refundHTLC(
         token: String,
         refundPrivateKey: String
     ) async throws -> [Proof] {
-        guard isReady else {
+        guard isReady else { throw CashuError.walletNotInitialized }
+        guard let swapService = await getSwapService() else {
             throw CashuError.walletNotInitialized
         }
-
-        // Parse the token
-        let cashuToken = try CashuTokenUtils.deserializeToken(token)
-        guard let tokenEntry = cashuToken.token.first else {
-            throw CashuError.invalidToken
+        guard let privateKeyData = Data(hexString: refundPrivateKey), privateKeyData.count == 32 else {
+            throw CashuError.invalidHexString
         }
 
-        // Create signature for refund
-        let signature = try signForRefund(
-            proofs: tokenEntry.proofs,
-            privateKey: refundPrivateKey
-        )
+        let cashuToken = try CashuTokenUtils.deserializeToken(token)
+        var allRefunded: [Proof] = []
 
-        // Create witness with empty preimage (for refund path)
-        _ = HTLCWitness(
-            preimage: "",
-            signatures: [signature]
-        )
+        for tokenEntry in cashuToken.token {
+            guard tokenEntry.mint == configuration.mintURL else {
+                throw CashuError.invalidMintConfiguration
+            }
 
-        // In a real implementation, we would swap with witness for refund
-        // For now, just receive the token normally
-        let refundedProofs = try await receive(token: cashuToken)
+            let witnessedProofs = try tokenEntry.proofs.map { proof -> Proof in
+                // Sign each proof's secret with the refund key (BIP340 Schnorr per NUT-14).
+                let messageHash = Hash.sha256(Data(proof.secret.utf8))
+                let signature = try NUT20SignatureManager.signMessage(
+                    messageHash: messageHash,
+                    privateKey: privateKeyData
+                )
+                let witness = HTLCWitness(preimage: "", signatures: [signature])
+                return Proof(
+                    amount: proof.amount,
+                    id: proof.id,
+                    secret: proof.secret,
+                    C: proof.C,
+                    witness: try Self.encodeHTLCWitness(witness),
+                    dleq: proof.dleq
+                )
+            }
 
-        // Metrics recording removed - metrics is private
-
-        return refundedProofs
+            let swapResult = try await swapService.swapToReceive(
+                proofs: witnessedProofs,
+                at: configuration.mintURL
+            )
+            try await addProofs(swapResult.newProofs)
+            allRefunded.append(contentsOf: swapResult.newProofs)
+        }
+        return allRefunded
     }
 
     // MARK: - HTLC Status
 
-    /// Check the status of an HTLC token
-    /// - Parameter token: The HTLC token to check
-    /// - Returns: Status information about the HTLC
+    /// Check the on-mint status (and decode the local locktime) of an HTLC token.
     func checkHTLCStatus(token: String) async throws -> HTLCStatus {
-        guard isReady else {
-            throw CashuError.walletNotInitialized
-        }
+        guard isReady else { throw CashuError.walletNotInitialized }
 
         let cashuToken = try CashuTokenUtils.deserializeToken(token)
         guard let tokenEntry = cashuToken.token.first else {
             throw CashuError.invalidToken
         }
 
-        // Check proof states with mint
         let batchResult = try await checkProofStates(tokenEntry.proofs)
 
-        // Parse HTLC details from the first proof
-        // Note: This is a simplified implementation
-        // Real implementation would properly parse HTLC secrets
+        // Decode the HTLC fields from the *first* locked proof. If none are HTLC, return a
+        // status with empty fields and let the caller decide whether the token is even an
+        // HTLC.
+        var hashLock = ""
+        var locktimeDate: Date?
+        var refundKey: String?
+        var authorizedKeys: [String]?
+        if let firstHTLC = tokenEntry.proofs.first(where: {
+            (try? WellKnownSecret.fromString($0.secret))?.isHTLC == true
+        }), let secret = try? WellKnownSecret.fromString(firstHTLC.secret) {
+            hashLock = secret.hashLock ?? ""
+            if let locktimeTag = secret.secretData.tags?.first(where: { $0.first == "locktime" }),
+               locktimeTag.count >= 2,
+               let locktimeUnix = Double(locktimeTag[1]) {
+                locktimeDate = Date(timeIntervalSince1970: locktimeUnix)
+            }
+            refundKey = secret.refundPublicKey
+            if let pubkeysTag = secret.secretData.tags?.first(where: { $0.first == "pubkeys" }),
+               pubkeysTag.count > 1 {
+                authorizedKeys = Array(pubkeysTag.dropFirst())
+            }
+        }
 
-        let locktime: Date? = nil // Would be parsed from secret
-        let isExpired = false
+        let isExpired: Bool = locktimeDate.map { $0 < Date() } ?? false
         let isSpent = batchResult.spentProofs.count == tokenEntry.proofs.count
-        let isPending = batchResult.pendingProofs.count > 0
+        let isPending = !batchResult.pendingProofs.isEmpty
 
         return HTLCStatus(
-            hashLock: "", // Would be extracted from secret
+            hashLock: hashLock,
             amount: tokenEntry.proofs.totalValue,
-            locktime: locktime,
+            locktime: locktimeDate,
             isExpired: isExpired,
             isSpent: isSpent,
             isPending: isPending,
-            refundKey: nil,
-            authorizedKeys: nil
+            refundKey: refundKey,
+            authorizedKeys: authorizedKeys
         )
-    }
-
-    // MARK: - Private Helpers
-
-    private func signForRefund(proofs: [Proof], privateKey: String) throws -> String {
-        // For HTLC refunds, we need to sign the proof secrets with the refund private key
-        // The signature proves ownership of the refund key specified in the HTLC
-        //
-        // The message to sign is the concatenation of all proof secrets
-        let message = proofs.map { $0.secret }.joined()
-        let messageHashData = Hash.sha256(Data(message.utf8))
-
-        // Parse the private key from hex string
-        guard let privateKeyData = Data(hexString: privateKey) else {
-            throw CashuError.invalidHexString
-        }
-
-        // Create the signing key from the private key data
-        do {
-            let signingKey = try P256K.Signing.PrivateKey(dataRepresentation: privateKeyData)
-
-            // Sign the message hash using Schnorr signature (NUT-11 style)
-            let signature = try signingKey.signature(for: messageHashData)
-
-            // Return the signature as hex string
-            return signature.dataRepresentation.hexString
-        } catch {
-            throw CashuError.invalidSignature("Failed to sign refund message: \(error.localizedDescription)")
-        }
     }
 }
 
@@ -268,6 +308,27 @@ public struct HTLCToken: Sendable {
     public let amount: Int
 }
 
+// MARK: - HTLCWitness JSON helpers
+
+extension HTLCWitness {
+    /// Sorted-key JSON encoding of the witness, suitable for `Proof.witness`.
+    fileprivate func toJSONString() throws -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        let data = try encoder.encode(self)
+        guard let string = String(data: data, encoding: .utf8) else {
+            throw CashuError.serializationFailed
+        }
+        return string
+    }
+}
+
+extension CashuWallet {
+    fileprivate static func encodeHTLCWitness(_ witness: HTLCWitness) throws -> String {
+        try witness.toJSONString()
+    }
+}
+
 /// Status information about an HTLC
 public struct HTLCStatus: Sendable {
     /// The hash lock of the HTLC
@@ -294,4 +355,3 @@ public struct HTLCStatus: Sendable {
     /// Authorized public keys if set
     public let authorizedKeys: [String]?
 }
-

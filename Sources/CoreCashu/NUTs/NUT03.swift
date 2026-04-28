@@ -144,7 +144,13 @@ public struct SwapPreparation: Sendable {
     public let targetOutputDenominations: [Int]
     public let changeAmount: Int
     public let fees: Int
-    
+    /// Set of `proof.secret` strings that the wallet flagged as "target" outputs (i.e., the
+    /// proofs being sent, as opposed to change). Empty when no locking is requested. Used by
+    /// `partitionSwapOutputs` to identify target proofs by secret rather than by denomination
+    /// — necessary when target and change share denominations and outputs are sorted for
+    /// privacy.
+    public let targetSecrets: Set<String>
+
     public init(
         inputProofs: [Proof],
         blindedMessages: [BlindedMessage],
@@ -152,7 +158,8 @@ public struct SwapPreparation: Sendable {
         targetAmount: Int?,
         targetOutputDenominations: [Int] = [],
         changeAmount: Int,
-        fees: Int
+        fees: Int,
+        targetSecrets: Set<String> = []
     ) {
         self.inputProofs = inputProofs
         self.blindedMessages = blindedMessages
@@ -161,6 +168,7 @@ public struct SwapPreparation: Sendable {
         self.targetOutputDenominations = targetOutputDenominations
         self.changeAmount = changeAmount
         self.fees = fees
+        self.targetSecrets = targetSecrets
     }
 }
 
@@ -217,12 +225,18 @@ public struct SwapService: Sendable {
     ///   - targetAmount: Amount to prepare for sending
     ///   - unit: Currency unit for the swap (optional, inferred from proofs if not provided)
     ///   - mintURL: The base URL of the mint
+    ///   - targetSecretFactory: Optional. Called once per *target* output (i.e., the proofs
+    ///     being sent, not change) to produce that proof's `secret` string. The factory is
+    ///     responsible for embedding any per-output randomness (e.g., a fresh NUT-10 nonce).
+    ///     When `nil`, target outputs use random secrets like change outputs (the
+    ///     anyone-can-spend default).
     /// - returns: SwapPreparation with prepared inputs and outputs
     public func prepareSwapToSend(
         availableProofs: [Proof],
         targetAmount: Int,
         unit: String? = nil,
-        at mintURL: String
+        at mintURL: String,
+        targetSecretFactory: (@Sendable () throws -> String)? = nil
     ) async throws -> SwapPreparation {
         // Get keyset information for fee calculation
         let keysetResponse = try await keysetManagementService.getKeysets(from: mintURL)
@@ -248,24 +262,20 @@ public struct SwapService: Sendable {
         let targetAmountOutputs = createOptimalDenominations(for: targetAmount)
         let changeAmount = totalOutput - targetAmount
         let changeOutputs = changeAmount > 0 ? createOptimalDenominations(for: changeAmount) : []
-        
-        // Combine and order outputs for privacy
-        var allOutputAmounts = targetAmountOutputs + changeOutputs
-        allOutputAmounts.sort() // Privacy-preserving ascending order
-        
+
         // Get active keyset for outputs
         let activeKeysets = try await keysetManagementService.getActiveKeysets(from: mintURL)
-        
+
         // Infer unit from proofs if not provided
         let targetUnit = unit ?? inferUnitFromProofs(availableProofs, keysetInfo: keysetDict)
-        
+
         // Filter by unit if available
         let filteredKeysets = if let targetUnit = targetUnit {
             activeKeysets.filter { $0.unit == targetUnit }
         } else {
             activeKeysets
         }
-        
+
         guard let activeKeyset = filteredKeysets.first else {
             if targetUnit != nil {
                 throw CashuError.keysetInactive
@@ -273,24 +283,50 @@ public struct SwapService: Sendable {
                 throw CashuError.noActiveKeyset
             }
         }
-        
-        // Create blinded messages
-        var blindedMessages: [BlindedMessage] = []
-        var blindingData: [WalletBlindingData] = []
-        
-        for amount in allOutputAmounts {
-            let secret = try CashuKeyUtils.generateRandomSecret()
+
+        // Helper: build a blinded output for a given amount and secret string.
+        func makeOutput(amount: Int, secret: String) throws -> (BlindedMessage, WalletBlindingData) {
             let walletBlindingData = try WalletBlindingData(secret: secret)
             let blindedMessage = BlindedMessage(
                 amount: amount,
                 id: activeKeyset.id,
                 B_: walletBlindingData.blindedMessage.dataRepresentation.hexString
             )
-            
+            return (blindedMessage, walletBlindingData)
+        }
+
+        // Build target outputs (locked or anyone-can-spend depending on factory presence) and
+        // change outputs (always anyone-can-spend with a random secret) separately so the
+        // factory is only invoked for target outputs.
+        struct PendingOutput { let amount: Int; let secret: String; let isTarget: Bool }
+        var pending: [PendingOutput] = []
+        var targetSecrets: Set<String> = []
+
+        for amount in targetAmountOutputs {
+            let secret = try targetSecretFactory?() ?? CashuKeyUtils.generateRandomSecret()
+            if targetSecretFactory != nil {
+                targetSecrets.insert(secret)
+            }
+            pending.append(PendingOutput(amount: amount, secret: secret, isTarget: true))
+        }
+        for amount in changeOutputs {
+            let secret = try CashuKeyUtils.generateRandomSecret()
+            pending.append(PendingOutput(amount: amount, secret: secret, isTarget: false))
+        }
+
+        // Sort by ascending amount for privacy. Stable on equal amounts but ordering between
+        // target and change of the same denomination doesn't leak information beyond what the
+        // mint already knows (it sees all outputs).
+        pending.sort { $0.amount < $1.amount }
+
+        var blindedMessages: [BlindedMessage] = []
+        var blindingData: [WalletBlindingData] = []
+        for output in pending {
+            let (blindedMessage, walletBlindingData) = try makeOutput(amount: output.amount, secret: output.secret)
             blindedMessages.append(blindedMessage)
             blindingData.append(walletBlindingData)
         }
-        
+
         return SwapPreparation(
             inputProofs: selection.selectedProofs,
             blindedMessages: blindedMessages,
@@ -298,7 +334,8 @@ public struct SwapService: Sendable {
             targetAmount: targetAmount,
             targetOutputDenominations: targetAmountOutputs,
             changeAmount: changeAmount,
-            fees: fees
+            fees: fees,
+            targetSecrets: targetSecrets
         )
     }
     

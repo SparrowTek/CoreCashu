@@ -932,6 +932,39 @@ public actor CashuWallet {
 // MARK: - Feature Probing API
 
 public extension CashuWallet {
+
+    /// Throws ``CashuError/unsupportedOperation(_:)`` (or the structured
+    /// ``CashuError/capabilityNotSupported(mintURL:capability:operation:guidance:)`` form)
+    /// if the connected mint hasn't advertised support for the given NUT.
+    ///
+    /// This is the single chokepoint that wires ``MintFeatureCapabilities`` as a runtime
+    /// contract for optional NUTs. Required capabilities (NUT-01/02/03/04/05/06) are not
+    /// gated here — the wallet refuses to initialise without them, which is enforced earlier.
+    /// Use this for optional NUTs (NUT-07 state check, NUT-09 restore, NUT-11 P2PK,
+    /// NUT-14 HTLC, NUT-15 MPP, etc.) before exposing them on the public API.
+    ///
+    /// - Parameters:
+    ///   - capability: The capability the operation requires.
+    ///   - operation: Human-readable description of what the caller is trying to do, used in
+    ///     the error message. Defaults to `nil` (uses the capability's display name).
+    /// - Throws: ``CashuError/walletNotInitialized`` if the wallet hasn't completed
+    ///   initialization yet (no `MintInfo` to consult); ``CashuError`` describing the missing
+    ///   capability otherwise.
+    func requireCapability(
+        _ capability: MintFeatureCapability,
+        operation: String? = nil
+    ) throws {
+        guard let capabilityManager else {
+            throw CashuError.walletNotInitialized
+        }
+        guard capabilityManager.isSupported(capability) else {
+            throw capabilityManager.unsupportedOperationError(
+                capability: capability,
+                operation: operation
+            )
+        }
+    }
+
     /// Check if a specific capability is supported by the mint
     func isCapabilitySupported(_ capability: MintFeatureCapability) -> Bool {
         return capabilityManager?.isSupported(capability) ?? false

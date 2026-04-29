@@ -1,6 +1,6 @@
 # NUT Status Matrix
 
-**Last updated:** 2026-04-28 (Phase 4 of `/opus47.md`)
+**Last updated:** 2026-04-29 (Phase 7 of `/opus47.md`)
 
 This document tracks CoreCashu's implementation status against upstream
 [`cashubtc/nuts`](https://github.com/cashubtc/nuts). The local snapshot in
@@ -63,16 +63,17 @@ exist or are not yet wired in.
 
 ## What "Capability flag" means
 
-`Sources/CoreCashu/NUTs/MintFeatureCapabilities.swift` is intended to be the
-single source of truth for what the wallet exposes. Phase 7.3 makes this the
-contract: the wallet should refuse to expose a NUT's operations unless the
-flag is set, and the flag should default to off for any NUT that:
+`Sources/CoreCashu/CapabilityDiscovery/MintFeatureCapabilities.swift` is the
+single source of truth for what the wallet exposes. As of Phase 7.3 it is the
+**runtime contract**: `CashuWallet.requireCapability(_:operation:)` is the
+chokepoint, and every public method that exposes an optional NUT calls it
+before doing any work. The flag defaults to off for any NUT that:
 
 1. Does not pass official spec vectors in CI, or
 2. Has known correctness gaps (status 🔧 in this matrix).
 
-Today the capability flags exist but are not consistently checked at the
-public-API boundary. Phase 7.3 closes that gap.
+NUT-21 and NUT-22 remain status 🔧 — their flags are off and the wallet
+refuses to talk to mints that require them, until Phase 2.3 / 2.4 land.
 
 ## Sources of truth
 
@@ -103,3 +104,9 @@ adds or revises a NUT, an issue should be opened to triage scope.
   implementation generated the HTLC secret and then discarded it). NUT-21
   (JWT) and NUT-22 (BAT endpoint+DLEQ) remain deferred to a follow-on
   session.
+- **2026-04-29** — Phase 7 update. Capability flags are now wired as the
+  runtime contract via `CashuWallet.requireCapability(_:operation:)`. Every
+  high-level optional-NUT entry point (NUT-07 state check, NUT-09 restore,
+  NUT-11 P2PK, NUT-14 HTLC) refuses to execute when the connected mint does
+  not advertise the corresponding `MintFeatureCapability`. Three regression
+  tests in `MockMintLockedSpendingTests` cover the contract end-to-end.

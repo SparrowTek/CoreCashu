@@ -41,6 +41,11 @@ public final class MockMint: Sendable {
         public let autoPayMintQuotes: Bool
         /// Mint name surfaced in /v1/info responses.
         public let name: String
+        /// Optional NUTs to *exclude* from the `/v1/info` `nuts` map. Used by capability-gating
+        /// tests that need to assert wallet-level operations refuse to execute when the mint
+        /// does not advertise the NUT (e.g. P2PK or HTLC unavailable). The mint always
+        /// advertises the required NUTs (1/2/3/4/5/6); excluding those is unsupported.
+        public let advertisedNUTsExclude: Set<String>
 
         public init(
             unit: String = "sat",
@@ -48,7 +53,8 @@ public final class MockMint: Sendable {
             mintEnabled: Bool = true,
             meltEnabled: Bool = true,
             autoPayMintQuotes: Bool = true,
-            name: String = "MockMint"
+            name: String = "MockMint",
+            advertisedNUTsExclude: Set<String> = []
         ) {
             self.unit = unit
             self.denominations = denominations
@@ -56,6 +62,7 @@ public final class MockMint: Sendable {
             self.meltEnabled = meltEnabled
             self.autoPayMintQuotes = autoPayMintQuotes
             self.name = name
+            self.advertisedNUTsExclude = advertisedNUTsExclude
         }
     }
 
@@ -312,32 +319,37 @@ public final class MockMint: Sendable {
                 "unit": configuration.unit
             ]]
 
+            var nuts: [String: Any] = [
+                "1": ["supported": true],
+                "2": ["supported": true],
+                "3": ["supported": true],
+                "4": [
+                    "methods": methods,
+                    "disabled": !configuration.mintEnabled
+                ],
+                "5": [
+                    "methods": methods,
+                    "disabled": !configuration.meltEnabled
+                ],
+                "6": ["supported": true],
+                "7": ["supported": true],
+                "8": ["supported": true],
+                "9": ["supported": true],
+                "10": ["supported": true],
+                "11": ["supported": true],
+                "12": ["supported": true],
+                "14": ["supported": true]
+            ]
+            for excluded in configuration.advertisedNUTsExclude {
+                nuts.removeValue(forKey: excluded)
+            }
+
             let info: [String: Any] = [
                 "name": configuration.name,
                 "pubkey": "02" + String(repeating: "ab", count: 32),
                 "version": "MockMint/0.1.0",
                 "description": "Mock mint for CoreCashu integration tests",
-                "nuts": [
-                    "1": ["supported": true],
-                    "2": ["supported": true],
-                    "3": ["supported": true],
-                    "4": [
-                        "methods": methods,
-                        "disabled": !configuration.mintEnabled
-                    ],
-                    "5": [
-                        "methods": methods,
-                        "disabled": !configuration.meltEnabled
-                    ],
-                    "6": ["supported": true],
-                    "7": ["supported": true],
-                    "8": ["supported": true],
-                    "9": ["supported": true],
-                    "10": ["supported": true],
-                    "11": ["supported": true],
-                    "12": ["supported": true],
-                    "14": ["supported": true]
-                ]
+                "nuts": nuts
             ]
             return try JSONSerialization.data(withJSONObject: info, options: [])
         }

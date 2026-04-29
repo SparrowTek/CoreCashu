@@ -29,6 +29,7 @@ public extension CashuWallet {
         authorizedKeys: [String]? = nil
     ) async throws -> HTLCToken {
         guard isReady else { throw CashuError.walletNotInitialized }
+        try requireCapability(.htlc, operation: "Create HTLC-locked token")
         guard amount > 0 else { throw CashuError.invalidAmount }
         guard let swapService = await getSwapService() else {
             throw CashuError.walletNotInitialized
@@ -126,6 +127,7 @@ public extension CashuWallet {
         signatures: [String]? = nil
     ) async throws -> [Proof] {
         guard isReady else { throw CashuError.walletNotInitialized }
+        try requireCapability(.htlc, operation: "Redeem HTLC-locked token")
         guard let swapService = await getSwapService() else {
             throw CashuError.walletNotInitialized
         }
@@ -186,6 +188,7 @@ public extension CashuWallet {
         refundPrivateKey: String
     ) async throws -> [Proof] {
         guard isReady else { throw CashuError.walletNotInitialized }
+        try requireCapability(.htlc, operation: "Refund expired HTLC")
         guard let swapService = await getSwapService() else {
             throw CashuError.walletNotInitialized
         }
@@ -234,6 +237,7 @@ public extension CashuWallet {
     /// Check the on-mint status (and decode the local locktime) of an HTLC token.
     func checkHTLCStatus(token: String) async throws -> HTLCStatus {
         guard isReady else { throw CashuError.walletNotInitialized }
+        try requireCapability(.htlc, operation: "Check HTLC token status")
 
         let cashuToken = try CashuTokenUtils.deserializeToken(token)
         guard let tokenEntry = cashuToken.token.first else {

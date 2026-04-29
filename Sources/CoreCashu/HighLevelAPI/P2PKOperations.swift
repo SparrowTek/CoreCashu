@@ -42,6 +42,7 @@ public extension CashuWallet {
         memo: String? = nil
     ) async throws -> CashuToken {
         guard isReady else { throw CashuError.walletNotInitialized }
+        try requireCapability(.p2pk, operation: "Send P2PK-locked token")
         guard amount > 0 else { throw CashuError.invalidAmount }
 
         // Validate multisig coherence up-front so the swap is not started against an obviously-
@@ -139,6 +140,7 @@ public extension CashuWallet {
     ///   network/swap errors propagated from the mint.
     func unlockP2PK(token: CashuToken, privateKey: String) async throws -> [Proof] {
         guard isReady else { throw CashuError.walletNotInitialized }
+        try requireCapability(.p2pk, operation: "Unlock P2PK-locked token")
         guard let swapService = await getSwapService() else {
             throw CashuError.walletNotInitialized
         }

@@ -1,18 +1,29 @@
 # CoreCashu Security Audit Scope Document
 
-> **Version:** 1.0
-> **Date:** December 29, 2025
-> **Package Version:** Pre-release (development)
+> **Version:** 1.1 — refreshed for Phase 7 of `/opus47.md`
+> **Date:** April 29, 2026
+> **Package Version:** Pre-1.0 (post Phase 7 — API freeze)
 
 ## 1. Executive Summary
 
-CoreCashu is a Swift implementation of the Cashu ecash protocol designed for cross-platform use. This document defines the scope for security audit, including code boundaries, dependencies, security-sensitive paths, and known limitations.
+CoreCashu is a Swift implementation of the Cashu ecash protocol designed for cross-platform
+use (Apple + Linux). This document defines the scope for external security audit: code
+boundaries, dependencies, security-sensitive paths, and known limitations.
 
 **Audit Type Recommended:** Full security audit with focus on:
-- Cryptographic implementation correctness
-- State machine integrity (proof lifecycle)
+- Cryptographic implementation correctness (BDHKE, BIP340 Schnorr, BIP39/BIP32, DLEQ)
+- State machine integrity (proof lifecycle, idempotent retry, breaker behaviour)
 - Input validation completeness
 - Secret handling and storage security
+- Capability-flag boundary correctness (each optional NUT must refuse to execute when
+  `MintFeatureCapabilities` does not advertise it — the `requireCapability` chokepoint
+  is the contract)
+
+**Pre-audit hard gates:** NUT-21 (Clear auth / JWT) and NUT-22 (Blind auth / BAT) are
+**not safe to advertise** in the current build — the JWT verifier is a stub and the
+BAT endpoint/header shape doesn't match the spec. Their `MintFeatureCapabilities` flags
+must remain off; the audit should confirm they are not reachable through the public
+API on a mint that does not advertise them.
 
 ---
 
@@ -48,11 +59,12 @@ CoreCashu/
 
 | Attribute | Value |
 |-----------|-------|
-| Language | Swift 6.0 |
+| Language | Swift 6.1 (`swiftLanguageModes: [.v6]`) |
 | Build System | Swift Package Manager |
-| Minimum Platforms | iOS 15, macOS 12, visionOS 1, watchOS 8, tvOS 15 |
-| Linux Support | Yes (SPM) |
-| Concurrency Model | Swift structured concurrency (actors, async/await) |
+| Minimum Platforms | iOS 17, macOS 15, tvOS 17, watchOS 10, macCatalyst 17 |
+| Linux Support | Yes (no `import CryptoKit` since Phase 3.1) |
+| Concurrency Model | Swift structured concurrency (actors, async/await) — strict concurrency enforced in debug **and** release |
+| Test count | 1047 Swift Testing tests passing on macOS |
 
 ---
 

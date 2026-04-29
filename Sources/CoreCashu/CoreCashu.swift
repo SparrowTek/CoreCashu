@@ -1,6 +1,8 @@
-@_exported import P256K
-@_exported import CryptoSwift
-@_exported import BigInt
+// CoreCashu intentionally does NOT re-export its dependencies. Consumers who
+// need direct access to `P256K`, `CryptoSwift`, or `BigInt` types must add
+// those packages as their own dependencies and `import` them explicitly. This
+// keeps CoreCashu's public-API surface tight and decouples CoreCashu's SemVer
+// from the dependency packages' SemVer.
 
 @CashuActor
 public struct CoreCashu {

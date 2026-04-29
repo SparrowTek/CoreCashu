@@ -211,4 +211,44 @@ struct MockMintLockedSpendingTests {
         #expect(status.locktime != nil)
         #expect(status.isExpired == false)
     }
+
+    // MARK: - Capability gating (Phase 7.3)
+
+    @Test("sendLocked throws CashuError.unsupportedOperation when mint omits NUT-11")
+    func sendLockedRejectedWhenP2PKUnadvertised() async throws {
+        let mint = try await MockMint(configuration: .init(advertisedNUTsExclude: ["11"]))
+        let wallet = try await makeWallet(mint)
+        try await mintProofs(wallet, amount: 16)
+
+        let keys = try freshKeypair()
+        await #expect(throws: CashuError.self, "sendLocked must refuse when NUT-11 is missing") {
+            _ = try await wallet.sendLocked(amount: 8, to: keys.publicKeyHex)
+        }
+    }
+
+    @Test("createHTLC throws CashuError.unsupportedOperation when mint omits NUT-14")
+    func createHTLCRejectedWhenHTLCUnadvertised() async throws {
+        let mint = try await MockMint(configuration: .init(advertisedNUTsExclude: ["14"]))
+        let wallet = try await makeWallet(mint)
+        try await mintProofs(wallet, amount: 16)
+
+        await #expect(throws: CashuError.self, "createHTLC must refuse when NUT-14 is missing") {
+            _ = try await wallet.createHTLC(amount: 8, preimage: Data(repeating: 0x42, count: 32))
+        }
+    }
+
+    @Test("requireCapability throws walletNotInitialized before initialize() runs")
+    func requireCapabilityRejectsUninitializedWallet() async throws {
+        // A fresh wallet that hasn't been initialized has no MintInfo / capability manager.
+        // The contract is to throw `walletNotInitialized` rather than silently allowing the
+        // capability check to pass.
+        let configuration = try WalletConfiguration(mintURL: Self.mintURL)
+        let wallet = await CashuWallet(
+            configuration: configuration,
+            secureStore: InMemorySecureStore()
+        )
+        await #expect(throws: CashuError.self) {
+            try await wallet.requireCapability(.htlc)
+        }
+    }
 }

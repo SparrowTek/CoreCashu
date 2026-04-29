@@ -88,25 +88,20 @@ internal class NetworkRouter<Endpoint: EndpointType>: NetworkRouterProtocol {
                 guard let httpResponse = response as? HTTPURLResponse else { throw NetworkError.noStatusCode }
                 switch httpResponse.statusCode {
                 case 200...299:
-                    // Success path
                     if let url = request.url {
                         let key = url.host.map { $0 + url.path } ?? url.absoluteString
                         await delegate?.breakerRecordSuccess(forKey: key)
                     }
                     return try decoder.decode(T.self, from: data)
                 default:
-                    // HTTP error
                     let statusCode = StatusCode(rawValue: httpResponse.statusCode)
-                    let error = NetworkError.statusCode(statusCode, data: data)
-                    lastError = error
-                    if let url = request.url {
-                        let key = url.host.map { $0 + url.path } ?? url.absoluteString
-                        await delegate?.breakerRecordFailure(forKey: key)
-                    }
-                    let shouldRetry = try await delegate?.shouldRetry(error: error, attempts: attempts) ?? false
-                    if !shouldRetry { throw error }
+                    throw NetworkError.statusCode(statusCode, data: data)
                 }
             } catch {
+                // Single failure-recording site for both HTTP errors (rethrown from the
+                // switch above) and transport-level errors (thrown by `networking.data`,
+                // `noStatusCode`, decode failures). Recording in both places opened the
+                // breaker at half the configured threshold — see opus47.md §6.H.
                 lastError = error
                 if let url = request.url {
                     let key = url.host.map { $0 + url.path } ?? url.absoluteString

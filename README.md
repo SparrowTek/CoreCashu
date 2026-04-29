@@ -1,85 +1,67 @@
 # CoreCashu
 
-> **BETA STATUS** - Security Audit Preparation Complete
-> 
-> CoreCashu has completed comprehensive security hardening and audit preparation:
-> - 660+ tests passing with ~75% code coverage
-> - Full threat model and security assumptions documented
-> - Rate limiting, circuit breakers, and secure storage implemented
-> - BIP39/BIP32 implementation verified against NUT-13 test vectors
-> - Constant-time operations and memory zeroization in place
-> 
+> **PRE-1.0 / BETA** — API freeze in progress.
+>
+> CoreCashu has completed phases 1–7 of the production-readiness plan in `/opus47.md`.
+> The protocol is correct on the wire (post-Phase-2 fixes for NUT-11 curve, NUT-19
+> hashing, NUT-24 routing), Linux is a first-class target (Phase 3), HTLC and P2PK
+> wallet APIs are end-to-end (Phase 4), strict concurrency is enforced in debug and
+> release (Phase 5), 1047 Swift Testing tests pass against an in-process MockMint
+> (Phase 6), and the public API has been narrowed (Phase 7).
+>
+> Two NUTs are explicitly **not safe to advertise** until follow-on work lands —
+> NUT-21 (JWT verification is a stub) and NUT-22 (endpoint and header shape don't
+> match the spec). Their capability flags must remain off. See
+> [`Docs/NUT_STATUS.md`](Docs/NUT_STATUS.md).
+>
 > **Pending external security audit before production use with significant funds.**
-> See [Security Documentation](Docs/threat_model.md) for details.
 
-[![Swift 6.0](https://img.shields.io/badge/Swift-6.0-orange.svg)](https://swift.org)
+[![Swift 6.1](https://img.shields.io/badge/Swift-6.1-orange.svg)](https://swift.org)
 [![Platforms](https://img.shields.io/badge/Platforms-iOS%20%7C%20macOS%20%7C%20tvOS%20%7C%20watchOS%20%7C%20visionOS%20%7C%20Linux-blue.svg)](https://swift.org)
 [![Swift Package Manager](https://img.shields.io/badge/Swift%20Package%20Manager-compatible-brightgreen.svg)](https://github.com/apple/swift-package-manager)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-A platform-agnostic Swift package implementing the Cashu ecash protocol. CoreCashu provides a type-safe API for integrating Cashu wallet functionality into your applications on any Swift-supported platform.
+A platform-agnostic Swift package implementing the Cashu ecash protocol. CoreCashu
+provides a type-safe API for integrating Cashu wallet functionality into your
+applications on any Swift-supported platform.
 
 ## Current Status
 
-### ✅ Implemented
-- **Core Protocol**: NUT-00 through NUT-06, NUT-07, NUT-08, NUT-09, NUT-10, NUT-11, NUT-12, NUT-13, NUT-14, NUT-15, NUT-16, NUT-17, NUT-19, NUT-20, NUT-22
-- **Wallet Operations**: Mint, melt, swap, send, receive
-- **Token Management**: V3/V4 token serialization, CBOR support
-- **Cryptography**: BDHKE, deterministic secrets, P2PK, HTLCs, BIP39 mnemonic generation
-- **State Management**: Actor-based concurrency, thread safety
-- **Error Handling**: Comprehensive error types and recovery
-- **Platform Abstraction**: Protocol-based design for cross-platform support
-- **Authentication**: NUT-22 access token support
-- **Restoration**: Wallet restoration from mnemonic (NUT-13)
+The single source of truth for per-NUT status is [`Docs/NUT_STATUS.md`](Docs/NUT_STATUS.md).
+For a list of breaking changes see [`CHANGELOG.md`](CHANGELOG.md) and
+[`Docs/migration_guide.md`](Docs/migration_guide.md).
 
-### 🚧 In Progress
-- **External Security Audit**: Ready for third-party review
-- **Additional NUTs**: DLCs (NUT-XX), subscription model improvements
+| Area | Status |
+|------|--------|
+| Wire-protocol correctness (NUT-00, 02, 03, 04, 05, 11, 12, 13, 14, 18, 19, 24) | ✅ Spec vectors pass where they exist |
+| High-level wallet API (mint, melt, swap, send, receive, P2PK, HTLC, restore) | ✅ Public surface, capability-gated |
+| Cross-platform (Linux + Apple) | ✅ CryptoKit removed; URLSession HTTP, injectable WebSockets |
+| Strict concurrency (`-strict-concurrency=complete` in debug + release) | ✅ Swift 6 language mode |
+| Test suite | ✅ 1047 Swift Testing tests pass against in-process MockMint |
+| `@_exported` dependency leaks | ✅ Removed (Phase 7.1) — consumers must `import P256K` etc. explicitly |
+| Capability gating at the public API | ✅ `requireCapability(_:operation:)` + per-operation gates |
+| NUT-21 (Clear auth / JWT) | 🔧 Signature verification is a stub — capability flag must stay off |
+| NUT-22 (Blind auth / BAT) | 🔧 Endpoint and header shape don't match spec — capability flag must stay off |
+| External security audit | ⏳ Pending |
 
-### ❌ Not Yet Implemented
-- **Advanced Features**: DLCs, some subscription model features
-- **Certificate Pinning**: TLS certificate pinning for enhanced security
+### What's not yet supported
+
+- **NUT-15 (Multi-path payments)** — type definitions only; no end-to-end routing.
+- **NUT-17 (WebSocket subscriptions)** — `RobustWebSocketClient` exists but lacks a deterministic reconnect-and-resume integration test against the MockMint (HTTP-only).
+- **NUT-21 / NUT-22** — see above; do not advertise to mints that require them.
+- **NUT-23 (multi-sig + keyset delegation)** — types only.
+- **NUT-25 / 26 / 27 / 28 / 29** — not implemented locally; per-NUT decisions deferred until v1 use cases appear.
 
 ## Features
 
-- ✅ **NUT Implementation**: Supports NUT-00 through NUT-22 (with some gaps)
-- ✅ **Thread-Safe**: Built with Swift's actor model for concurrent operations
-- ✅ **Type-Safe**: Leverages Swift's type system for compile-time safety
-- ✅ **SwiftUI Ready**: Designed for easy integration with SwiftUI applications
-- ✅ **Deterministic Secrets**: BIP39/BIP32 support for wallet recovery
-- ✅ **Multiple Token Formats**: V3 JSON and V4 CBOR token formats
-- ✅ **Advanced Spending Conditions**: P2PK and HTLC support
-
-## Supported Cashu NIPs (NUTs)
-
-### Core Protocol
-- **NUT-00**: Notation, Terminology and Types
-- **NUT-01**: Mint public key exchange
-- **NUT-02**: Keysets and keyset IDs
-- **NUT-03**: Swap tokens (exchange proofs)
-- **NUT-04**: Mint tokens
-- **NUT-05**: Melting tokens
-- **NUT-06**: Mint information
-
-### Token Formats
-- **NUT-00**: V3 Token Format (JSON-based)
-- **NUT-00**: V4 Token Format (CBOR-based)
-
-### Advanced Features
-- **NUT-07**: Token state check
-- **NUT-08**: Lightning fee return
-- **NUT-09**: Wallet restore from seed
-- **NUT-10**: Spending conditions (P2PK)
-- **NUT-11**: Pay-to-Public-Key (P2PK)
-- **NUT-12**: Offline ecash signature validation (DLEQ)
-- **NUT-13**: Deterministic secrets (BIP39/BIP32)
-- **NUT-14**: Hash Time Locked Contracts (HTLCs)
-- **NUT-15**: Multi-path payments (MPP)
-- **NUT-16**: Animated QR codes
-- **NUT-17**: WebSocket subscriptions
-- **NUT-19**: Mint Management
-- **NUT-20**: Bitcoin On-Chain Support
-- **NUT-22**: Non-custodial wallet authentication
+- ✅ **Protocol-correct NUTs**: see [`Docs/NUT_STATUS.md`](Docs/NUT_STATUS.md) for the per-NUT matrix
+- ✅ **Thread-Safe**: Swift actor model throughout; `Sendable`-audited types
+- ✅ **Type-Safe**: Strict concurrency enforced in debug and release
+- ✅ **Cross-platform**: Apple + Linux with no CryptoKit dependency
+- ✅ **Deterministic Secrets**: BIP39/BIP32 (PBKDF2-HMAC-SHA-512, 2048 iterations)
+- ✅ **Multiple Token Formats**: V3 JSON and V4 CBOR
+- ✅ **Advanced Spending Conditions**: P2PK (NUT-11) and HTLC (NUT-14) end-to-end
+- ✅ **Capability-gated**: optional NUTs throw `CashuError.unsupportedOperation` when the connected mint doesn't advertise support
 
 ## Installation
 
@@ -250,13 +232,26 @@ let mnemonic = try SecureRandom.withGenerator({ count in
 }
 ```
 
-### Spending Conditions (NUT-10/11)
+### Spending Conditions (NUT-10/11) and HTLC (NUT-14)
 
-Support exists in lower-level services and models; high-level wallet helpers are under development. Refer to NUT-10/11 modules and tests for current usage patterns.
+The wallet exposes high-level entry points for both:
 
-### HTLC Support (NUT-14)
+```swift
+// Lock funds to a recipient pubkey (NUT-11)
+let token = try await wallet.sendLocked(amount: 100, to: recipientPubKey, memo: "for coffee")
 
-HTLC primitives are implemented in the model layer. High-level wallet flows are planned; see NUT-14 tests for examples.
+// Recipient unlocks with their private key
+let proofs = try await wallet.unlockP2PK(token: token, privateKey: recipientPrivKey)
+
+// Hash time-locked contracts (NUT-14)
+let htlc = try await wallet.createHTLC(amount: 100, locktime: Date().addingTimeInterval(3600))
+let unlocked = try await wallet.redeemHTLC(token: htlc.token, preimage: htlc.preimage)
+```
+
+Both paths are gated behind their `MintFeatureCapability` (`.p2pk`, `.htlc`) — the
+wallet throws `CashuError.unsupportedOperation` when the connected mint does not
+advertise the capability in its `MintInfo`. See `Tests/CoreCashuTests/MockMintLockedSpendingTests.swift`
+for end-to-end exercises.
 
 ### Token State Management (NUT-07)
 
@@ -292,14 +287,19 @@ CoreCashu has completed comprehensive security hardening in preparation for exte
 - **Input Validation**: BIP39 mnemonic validation, proof validation, comprehensive error handling
 
 ### Audit Status
-CoreCashu is **preparing for external security audit**. The current state of the audit checklist is:
-- ~900 tests passing
+CoreCashu is **preparing for external security audit**. As of Phase 7 of `/opus47.md`:
+- 1047 Swift Testing tests pass against an in-process `MockMint` (no live mint required for CI)
 - BIP32/BIP39 implementation verified against official NUT-13 test vectors
-- Force unwraps, force casts, and `try!` removed from production code (Phase 1 of `opus47.md`)
-- `@unchecked Sendable` usages present; audit-friendly justifications still being added (Phase 4 of `opus47.md`)
-- Strict concurrency enabled in debug; release-config enforcement pending (Phase 4 of `opus47.md`)
+- BDHKE, NUT-11 P2PK, and NUT-12 DLEQ all verify spec vectors end-to-end
+- Force unwraps, force casts, `try!`, and stray `print()` removed from production code
+- Strict concurrency enforced in **both** debug and release (Swift 6 language mode)
+- `@_exported` dependency leaks removed; public API surface narrowed
+- `MintFeatureCapabilities` is now wired as a runtime contract — optional NUTs throw `CashuError.unsupportedOperation` when the connected mint doesn't advertise them
+- NUT-21 (Clear auth / JWT) and NUT-22 (Blind auth / BAT) are explicitly **not yet correct on the wire**; their capability flags must stay off
 
 **Production use with significant funds should await completion of external audit.**
+
+For the full per-phase work log see [`/opus47.md`](../opus47.md).
 
 ## Platform Support
 

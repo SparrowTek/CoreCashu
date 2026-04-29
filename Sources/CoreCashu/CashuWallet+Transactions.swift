@@ -91,7 +91,8 @@ public extension CashuWallet {
             amount: amount,
             method: method,
             unit: configuration.unit,
-            at: configuration.mintURL
+            at: configuration.mintURL,
+            deterministicOutputs: deterministicOutputProvider()
         )
         let result = try await mintService.executeCompleteMint(
             preparation: preparation,
@@ -131,7 +132,8 @@ public extension CashuWallet {
             availableProofs: availableProofs,
             targetAmount: amount,
             unit: configuration.unit,
-            at: configuration.mintURL
+            at: configuration.mintURL,
+            deterministicOutputs: deterministicOutputProvider()
         )
 
         try await proofManager.markAsPendingSpent(preparation.inputProofs)
@@ -206,7 +208,8 @@ public extension CashuWallet {
             // Always swap received proofs to invalidate sender's proofs and get fresh outputs.
             let swapResult = try await swapService.swapToReceive(
                 proofs: tokenEntry.proofs,
-                at: configuration.mintURL
+                at: configuration.mintURL,
+                deterministicOutputs: deterministicOutputProvider()
             )
             try await proofManager.addProofs(swapResult.newProofs)
             allNewProofs.append(contentsOf: swapResult.newProofs)

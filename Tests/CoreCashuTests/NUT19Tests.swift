@@ -9,6 +9,10 @@ import Testing
 @testable import CoreCashu
 import Foundation
 
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+
 @Suite("NUT-19 Tests", .serialized)
 struct NUT19Tests {
     

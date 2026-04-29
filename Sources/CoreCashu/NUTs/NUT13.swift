@@ -234,22 +234,13 @@ public struct WalletRestoration: Sendable {
     }
     
     private func blindMessage(secret: String, r: Data) throws -> String {
-        guard let secretData = Data(hexString: secret) else {
-            throw CashuError.invalidSecret
-        }
-        
-        // Y = hash_to_curve(secret)
-        let Y = try BDHKE.hashToCurve(secretData)
-
-        // r*G
-        let rPrivateKey = try P256K.KeyAgreement.PrivateKey(dataRepresentation: r)
-        let G = try BDHKE.generatorPoint()
-        let rG = try BDHKE.multiply(point: G, scalar: rPrivateKey)
-
-        // B_ = Y + r*G
-        let B_ = try BDHKE.add(Y, rG)
-        
-        return B_.dataRepresentation.hexString
+        // Phase 8.3 follow-up: route restoration's blinded-message construction through the
+        // same `WalletBlindingData` path issuance uses, so the secret is hashed identically on
+        // both sides (`hashToCurve(secret as UTF-8)` — the mint's `verifyToken` uses the same
+        // path). The previous version hex-decoded the secret before hashing, which produced
+        // different B_ values from issuance and broke restore.
+        let blindingData = try WalletBlindingData(secret: secret, blindingFactor: r)
+        return blindingData.blindedMessage.dataRepresentation.hexString
     }
     
     private func unblindSignature(blindedSignature: BlindSignature, r: Data, mintPublicKey: P256K.KeyAgreement.PublicKey) throws -> String {

@@ -8,6 +8,10 @@
 
 import Foundation
 
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+
 // MARK: - NUT-17: WebSockets
 
 /// NUT-17: WebSockets

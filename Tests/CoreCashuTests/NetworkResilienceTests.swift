@@ -2,6 +2,10 @@ import Testing
 @testable import CoreCashu
 import Foundation
 
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+
 // A dummy Networking that always fails with a timeout to trip the breaker
 final class AlwaysFailNetworking: Networking {
     func data(for request: URLRequest, delegate: (any URLSessionTaskDelegate)?) async throws -> (Data, URLResponse) {

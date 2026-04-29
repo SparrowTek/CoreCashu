@@ -287,7 +287,7 @@ struct IntegrationTests {
     @Test
     func testPerformanceIntegration() async throws {
         // Test token creation performance
-        let startTime = CFAbsoluteTimeGetCurrent()
+        let startTime = Date().timeIntervalSinceReferenceDate
         
         let proof = Proof(
             amount: 1000,
@@ -304,7 +304,7 @@ struct IntegrationTests {
             )
         }
         
-        let endTime = CFAbsoluteTimeGetCurrent()
+        let endTime = Date().timeIntervalSinceReferenceDate
         let duration = endTime - startTime
         
         // Should complete in reasonable time
@@ -327,7 +327,7 @@ struct IntegrationTests {
         )
         
         // Test serialization performance
-        let startTime = CFAbsoluteTimeGetCurrent()
+        let startTime = Date().timeIntervalSinceReferenceDate
         
         var serializedTokens: [String] = []
         for _ in 0..<1000 {
@@ -335,20 +335,20 @@ struct IntegrationTests {
             serializedTokens.append(serialized)
         }
         
-        let endTime = CFAbsoluteTimeGetCurrent()
+        let endTime = Date().timeIntervalSinceReferenceDate
         let duration = endTime - startTime
         
         // Should complete in reasonable time
         #expect(duration < 2.0, "Serialization took too long: \(duration) seconds")
         
         // Test deserialization performance
-        let deserializationStartTime = CFAbsoluteTimeGetCurrent()
+        let deserializationStartTime = Date().timeIntervalSinceReferenceDate
         
         for serialized in serializedTokens {
             _ = try CashuTokenUtils.deserializeToken(serialized)
         }
         
-        let deserializationEndTime = CFAbsoluteTimeGetCurrent()
+        let deserializationEndTime = Date().timeIntervalSinceReferenceDate
         let deserializationDuration = deserializationEndTime - deserializationStartTime
         
         // Should complete in reasonable time

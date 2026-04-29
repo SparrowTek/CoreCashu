@@ -89,7 +89,8 @@ public extension CashuWallet {
             targetAmount: amount,
             unit: configuration.unit,
             at: configuration.mintURL,
-            targetSecretFactory: factory
+            targetSecretFactory: factory,
+            deterministicOutputs: deterministicOutputProvider()
         )
 
         try await markPendingSpent(preparation.inputProofs)
@@ -182,7 +183,8 @@ public extension CashuWallet {
 
             let swapResult = try await swapService.swapToReceive(
                 proofs: witnessedProofs,
-                at: configuration.mintURL
+                at: configuration.mintURL,
+                deterministicOutputs: deterministicOutputProvider()
             )
             try await addProofs(swapResult.newProofs)
             allUnlocked.append(contentsOf: swapResult.newProofs)

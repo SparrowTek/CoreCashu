@@ -17,15 +17,18 @@ public actor InMemorySecureStore: SecureStore {
     public init() {}
     
     // MARK: - Mnemonic Operations
-    
-    public func saveMnemonic(_ mnemonic: String) async throws {
-        storage[mnemonicKey] = mnemonic
+
+    public func saveMnemonic(_ mnemonic: SensitiveString) async throws {
+        mnemonic.withString { plaintext in
+            storage[mnemonicKey] = plaintext
+        }
     }
-    
-    public func loadMnemonic() async throws -> String? {
-        storage[mnemonicKey]
+
+    public func loadMnemonic() async throws -> SensitiveString? {
+        guard let raw = storage[mnemonicKey] else { return nil }
+        return SensitiveString(raw)
     }
-    
+
     public func deleteMnemonic() async throws {
         storage.removeValue(forKey: mnemonicKey)
     }
@@ -113,14 +116,14 @@ public final class InMemorySecureStoreWrapper: SecureStore, @unchecked Sendable 
     
     public init() {}
     
-    public func saveMnemonic(_ mnemonic: String) async throws {
+    public func saveMnemonic(_ mnemonic: SensitiveString) async throws {
         try await store.saveMnemonic(mnemonic)
     }
-    
-    public func loadMnemonic() async throws -> String? {
+
+    public func loadMnemonic() async throws -> SensitiveString? {
         try await store.loadMnemonic()
     }
-    
+
     public func deleteMnemonic() async throws {
         try await store.deleteMnemonic()
     }

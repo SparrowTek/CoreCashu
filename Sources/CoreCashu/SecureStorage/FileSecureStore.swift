@@ -156,12 +156,15 @@ public actor FileSecureStore: SecureStore {
 
     // MARK: - SecureStore
 
-    public func saveMnemonic(_ mnemonic: String) async throws {
-        try saveString(mnemonic, kind: .mnemonic)
+    public func saveMnemonic(_ mnemonic: SensitiveString) async throws {
+        try mnemonic.withString { plaintext in
+            try saveString(plaintext, kind: .mnemonic)
+        }
     }
 
-    public func loadMnemonic() async throws -> String? {
-        try loadString(kind: .mnemonic)
+    public func loadMnemonic() async throws -> SensitiveString? {
+        guard let raw = try loadString(kind: .mnemonic) else { return nil }
+        return SensitiveString(raw)
     }
 
     public func deleteMnemonic() async throws {

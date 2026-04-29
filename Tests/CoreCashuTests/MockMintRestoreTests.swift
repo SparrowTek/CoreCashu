@@ -85,27 +85,26 @@ struct MockMintRestoreTests {
         #expect(bogusResponse.signatures.isEmpty)
     }
 
-    /// **Open finding (Phase 8.3, 2026-04-29):** the production mint and swap services use
-    /// random secrets / blinding factors rather than the wallet's deterministic derivation. As a
-    /// result, `restoreFromSeed` cannot rediscover proofs the wallet itself issued — the B_
-    /// values in restore queries (deterministic) never match the B_ values the mint stored
-    /// (random). This test documents the gap; flipping the issuance path to use
-    /// `deterministicDerivation` is tracked as a follow-up bug for after Phase 8.
-    @Test("restoreFromSeed does not yet reuse deterministic derivation during mint (open bug)")
-    func restoreFromSeedDoesNotYetReuseDeterministicDerivationDuringMint() async throws {
+    /// Phase 8.3 follow-up (2026-04-29): the bug surfaced earlier is now fixed. The mint and
+    /// swap services accept a `DeterministicOutputProvider` and the wallet builds one from its
+    /// `deterministicDerivation` + `keysetCounterManager`. After this lands, a wallet that
+    /// holds the same mnemonic as the original issuer can restore the full balance from the
+    /// mint's NUT-09 endpoint because the B_ values match between issuance and restore.
+    @Test("restoreFromSeed rediscovers proofs the original wallet minted under the same seed")
+    func restoreFromSeedRediscoversIssuedProofs() async throws {
         let mint = try await MockMint()
         let (wallet1, mnemonic) = try await makeWalletWithMnemonic(mint)
         try await mintProofs(wallet1, amount: 16)
         let originalBalance = try await wallet1.balance
         #expect(originalBalance == 16)
 
-        // Wallet 2 with the same mnemonic. Until the issuance path is wired through
-        // `deterministicDerivation`, restore returns 0 because the B_ values don't match.
+        // Wallet 2 with the same mnemonic. With deterministic derivation now wired through
+        // mint/swap, restore re-derives the same B_ values, hits MockMint's restore cache, and
+        // recovers the full amount.
         let (wallet2, _) = try await makeWalletWithMnemonic(mint, mnemonic: mnemonic)
         let restoredBalance = try await wallet2.restoreFromSeed()
-        #expect(
-            restoredBalance == 0,
-            "Expected 0 because mint/swap services do not yet use deterministic derivation. When they do, this test should flip to expect 16."
-        )
+        #expect(restoredBalance == 16, "Expected to restore the full 16 sats; got \(restoredBalance)")
+        let walletBalance = try await wallet2.balance
+        #expect(walletBalance == 16)
     }
 }

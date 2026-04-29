@@ -6,6 +6,10 @@
 //
 
 import Foundation
+
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 import P256K
 
 // MARK: - Wallet Configuration
@@ -268,10 +272,14 @@ public actor CashuWallet {
         await self.init(configuration: config, networking: URLSession.shared)
     }
     
-    /// Initialize wallet with mnemonic phrase (NUT-13)
+    /// Initialize wallet with mnemonic phrase (NUT-13).
+    ///
+    /// This is the canonical initializer; the plaintext mnemonic is held under the
+    /// ``SensitiveString`` lock and wiped on the wrapper's deinit.
+    ///
     /// - Parameters:
     ///   - configuration: Wallet configuration
-    ///   - mnemonic: BIP39 mnemonic phrase
+    ///   - mnemonic: BIP39 mnemonic phrase, wrapped in ``SensitiveString``
     ///   - passphrase: Optional BIP39 passphrase
     ///   - proofStorage: Optional custom proof storage
     ///   - counterStorage: Optional custom counter storage
@@ -280,7 +288,7 @@ public actor CashuWallet {
     ///   - logger: Optional logger implementation (defaults to console logger)
     public init(
         configuration: WalletConfiguration,
-        mnemonic: String,
+        mnemonic: SensitiveString,
         passphrase: String = "",
         proofStorage: (any ProofStorage)? = nil,
         counterStorage: (any KeysetCounterStorage)? = nil,
@@ -294,7 +302,7 @@ public actor CashuWallet {
         let resolvedNetworking: any Networking = networking ?? URLSession.shared
         self.mintInfoService = await MintInfoService(networking: resolvedNetworking)
         self.keysetCounterManager = KeysetCounterManager()
-        
+
         #if canImport(Security) && !os(Linux)
         if let secureStore {
             self.secureStore = secureStore
@@ -306,7 +314,7 @@ public actor CashuWallet {
         // must inject `FileSecureStore(password:)` or another `SecureStore`.
         self.secureStore = secureStore
         #endif
-        
+
         self.networking = resolvedNetworking
 
         // Use provided logger or default to console logger
@@ -314,29 +322,58 @@ public actor CashuWallet {
 
         // Use provided metrics or default to no-op
         self.metrics = metrics ?? NoOpMetricsClient()
-        
-        // Validate mnemonic BEFORE storing (security: prevents persisting invalid data)
-        // DeterministicSecretDerivation validates internally but we fail fast here
-        // to avoid any state changes before validation
-        guard BIP39.validateMnemonic(mnemonic) else {
+
+        // Validate mnemonic BEFORE storing (security: prevents persisting invalid data).
+        // The validation lifts the plaintext only inside `withString`'s scope.
+        let isValid = mnemonic.withString { BIP39.validateMnemonic($0) }
+        guard isValid else {
             throw CashuError.invalidMnemonic
         }
-        
-        // Initialize deterministic derivation (validation passed)
+
+        // Initialize deterministic derivation (validation passed).
         self.deterministicDerivation = try DeterministicSecretDerivation(
             mnemonic: mnemonic,
             passphrase: passphrase
         )
-        
-        // Store mnemonic securely AFTER validation succeeds
+
+        // Store mnemonic securely AFTER validation succeeds. The SecureStore conformer holds
+        // the plaintext only inside its own `withString` scope (see protocol doc).
         if let secureStore = self.secureStore {
             try await secureStore.saveMnemonic(mnemonic)
         }
-        
+
         // Initialize services
         await setupServices()
-        
+
         // Counter state is managed in-memory by KeysetCounterManager
+    }
+
+    /// Convenience initializer that accepts a `String` mnemonic and wraps it in
+    /// ``SensitiveString`` immediately. Prefer the ``SensitiveString``-typed initializer in
+    /// new code — passing a `String` allows the runtime to keep additional copies that
+    /// the wrapper cannot wipe.
+    public init(
+        configuration: WalletConfiguration,
+        mnemonic: String,
+        passphrase: String = "",
+        proofStorage: (any ProofStorage)? = nil,
+        counterStorage: (any KeysetCounterStorage)? = nil,
+        secureStore: (any SecureStore)? = nil,
+        networking: (any Networking)? = nil,
+        logger: (any LoggerProtocol)? = nil,
+        metrics: (any MetricsClient)? = nil
+    ) async throws {
+        try await self.init(
+            configuration: configuration,
+            mnemonic: SensitiveString(mnemonic),
+            passphrase: passphrase,
+            proofStorage: proofStorage,
+            counterStorage: counterStorage,
+            secureStore: secureStore,
+            networking: networking,
+            logger: logger,
+            metrics: metrics
+        )
     }
     
     // MARK: - Wallet State Management
@@ -701,7 +738,20 @@ public actor CashuWallet {
     }
     
     // MARK: - Private Methods
-    
+
+    /// Build a ``DeterministicOutputProvider`` from the wallet's NUT-13 derivation and counter
+    /// manager, or `nil` if the wallet was not initialized with a mnemonic.
+    ///
+    /// Phase 8.3 follow-up — used by mint/swap call sites so issued proofs use deterministic
+    /// secrets and `restoreFromSeed` can rediscover them later.
+    internal func deterministicOutputProvider() -> DeterministicOutputProvider? {
+        guard let derivation = deterministicDerivation else { return nil }
+        return DeterministicOutputProvider(
+            derivation: derivation,
+            counterManager: keysetCounterManager
+        )
+    }
+
     /// Setup wallet services
     private func setupServices() async {
         let mint = await MintService(networking: networking)

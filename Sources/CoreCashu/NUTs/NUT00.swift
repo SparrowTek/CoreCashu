@@ -280,6 +280,18 @@ public struct WalletBlindingData: Sendable {
         let rG = try BDHKE.multiply(point: generatorPoint, scalar: self.blindingFactor)
         self.blindedMessage = try BDHKE.add(self.secretPoint, rG)
     }
+
+    /// Construct blinding data from a caller-supplied (secret, blinding factor) pair.
+    /// Used by NUT-13 deterministic derivation so mint/swap outputs can be reproduced from the
+    /// seed (Phase 8.10/8.3 — restore-from-seed actually works after this lands).
+    public init(secret: String, blindingFactor: Data) throws {
+        self.secret = secret
+        self.blindingFactor = try P256K.KeyAgreement.PrivateKey(dataRepresentation: blindingFactor)
+        self.secretPoint = try BDHKE.hashToCurve(secret)
+        let generatorPoint = try BDHKE.generatorPoint()
+        let rG = try BDHKE.multiply(point: generatorPoint, scalar: self.blindingFactor)
+        self.blindedMessage = try BDHKE.add(self.secretPoint, rG)
+    }
 }
 
 /// Represents an unblinded token

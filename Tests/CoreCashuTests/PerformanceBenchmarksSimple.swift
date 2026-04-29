@@ -19,24 +19,24 @@ struct PerformanceBenchmarksSimple {
         let iterations = 10000
         
         // Benchmark writes
-        let writeStart = CFAbsoluteTimeGetCurrent()
+        let writeStart = Date().timeIntervalSinceReferenceDate
         for i in 0..<iterations {
             await cache.set("key\(i)", value: "value\(i)")
         }
-        let writeTime = CFAbsoluteTimeGetCurrent() - writeStart
+        let writeTime = Date().timeIntervalSinceReferenceDate - writeStart
         
         print("Cache write: \(iterations) ops in \(String(format: "%.3f", writeTime))s")
         print("Average: \(String(format: "%.3f", writeTime / Double(iterations) * 1000))ms/op")
         
         // Benchmark reads
-        let readStart = CFAbsoluteTimeGetCurrent()
+        let readStart = Date().timeIntervalSinceReferenceDate
         var hits = 0
         for i in 0..<iterations {
             if await cache.get("key\(i)") != nil {
                 hits += 1
             }
         }
-        let readTime = CFAbsoluteTimeGetCurrent() - readStart
+        let readTime = Date().timeIntervalSinceReferenceDate - readStart
         
         print("Cache read: \(iterations) ops in \(String(format: "%.3f", readTime))s")
         print("Hit rate: \(Double(hits) / Double(iterations) * 100)%")
@@ -60,25 +60,25 @@ struct PerformanceBenchmarksSimple {
         }
         
         // Benchmark insertion
-        let insertStart = CFAbsoluteTimeGetCurrent()
+        let insertStart = Date().timeIntervalSinceReferenceDate
         for proof in proofs {
             _ = await storage.store(proof)
         }
-        let insertTime = CFAbsoluteTimeGetCurrent() - insertStart
+        let insertTime = Date().timeIntervalSinceReferenceDate - insertStart
         
         print("Proof insertion: \(proofs.count) proofs in \(String(format: "%.3f", insertTime))s")
         
         // Benchmark queries
-        let queryStart = CFAbsoluteTimeGetCurrent()
+        let queryStart = Date().timeIntervalSinceReferenceDate
         _ = await storage.getUnspentProofs()
-        let queryTime = CFAbsoluteTimeGetCurrent() - queryStart
+        let queryTime = Date().timeIntervalSinceReferenceDate - queryStart
         
         print("Query unspent: \(String(format: "%.3f", queryTime * 1000))ms")
         
         // Benchmark selection
-        let selectStart = CFAbsoluteTimeGetCurrent()
+        let selectStart = Date().timeIntervalSinceReferenceDate
         _ = await storage.selectProofsForAmount(100)
-        let selectTime = CFAbsoluteTimeGetCurrent() - selectStart
+        let selectTime = Date().timeIntervalSinceReferenceDate - selectStart
         
         print("Select for amount: \(String(format: "%.3f", selectTime * 1000))ms")
         
@@ -92,23 +92,23 @@ struct PerformanceBenchmarksSimple {
         let items = Array(0..<100)
         
         // Sequential processing
-        let seqStart = CFAbsoluteTimeGetCurrent()
+        let seqStart = Date().timeIntervalSinceReferenceDate
         var seqResults: [Int] = []
         for item in items {
             // Simulate work
             try await Task.sleep(nanoseconds: 1_000_000) // 1ms
             seqResults.append(item * 2)
         }
-        let seqTime = CFAbsoluteTimeGetCurrent() - seqStart
+        let seqTime = Date().timeIntervalSinceReferenceDate - seqStart
         
         // Batch processing
-        let batchStart = CFAbsoluteTimeGetCurrent()
+        let batchStart = Date().timeIntervalSinceReferenceDate
         let batchResults = try await OptimizedCrypto.batchProcess(items: items) { item in
             // Simulate work
             try await Task.sleep(nanoseconds: 1_000_000) // 1ms
             return item * 2
         }
-        let batchTime = CFAbsoluteTimeGetCurrent() - batchStart
+        let batchTime = Date().timeIntervalSinceReferenceDate - batchStart
         
         print("Sequential: \(String(format: "%.3f", seqTime))s")
         print("Batch: \(String(format: "%.3f", batchTime))s")
@@ -123,14 +123,14 @@ struct PerformanceBenchmarksSimple {
         let testData = "test_data".data(using: .utf8)!
         
         // First call (cache miss)
-        let firstStart = CFAbsoluteTimeGetCurrent()
+        let firstStart = Date().timeIntervalSinceReferenceDate
         _ = try await OptimizedCrypto.cachedHashToCurve(testData)
-        let firstTime = CFAbsoluteTimeGetCurrent() - firstStart
+        let firstTime = Date().timeIntervalSinceReferenceDate - firstStart
         
         // Second call (cache hit)
-        let secondStart = CFAbsoluteTimeGetCurrent()
+        let secondStart = Date().timeIntervalSinceReferenceDate
         _ = try await OptimizedCrypto.cachedHashToCurve(testData)
-        let secondTime = CFAbsoluteTimeGetCurrent() - secondStart
+        let secondTime = Date().timeIntervalSinceReferenceDate - secondStart
         
         print("First call (miss): \(String(format: "%.3f", firstTime * 1000))ms")
         print("Second call (hit): \(String(format: "%.3f", secondTime * 1000))ms")
@@ -159,7 +159,7 @@ struct PerformanceBenchmarksSimple {
         let iterations = 100
         
         // Test with caching
-        let cachedStart = CFAbsoluteTimeGetCurrent()
+        let cachedStart = Date().timeIntervalSinceReferenceDate
         
         for i in 0..<iterations {
             // Cache mint info
@@ -187,7 +187,7 @@ struct PerformanceBenchmarksSimple {
             _ = proof
         }
         
-        let cachedTime = CFAbsoluteTimeGetCurrent() - cachedStart
+        let cachedTime = Date().timeIntervalSinceReferenceDate - cachedStart
         
         print("Cached operations: \(iterations) in \(String(format: "%.3f", cachedTime))s")
         print("Average: \(String(format: "%.3f", cachedTime / Double(iterations) * 1000))ms/op")

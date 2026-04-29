@@ -19,7 +19,7 @@ struct KeychainSecureStoreTests {
         let mnemonic = "abandon ability able about above absent absorb abstract absurd abuse"
         try await store.saveMnemonic(mnemonic)
 
-        let loaded = try await store.loadMnemonic()
+        let loaded = try await store.loadMnemonicString()
         #expect(loaded == mnemonic)
 
         try await store.clearAll()

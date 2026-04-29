@@ -17,7 +17,7 @@ struct FileSecureStoreTests {
         try await store.saveMnemonic(mnemonic)
         try await store.saveSeed(seed)
 
-        #expect(try await store.loadMnemonic() == mnemonic)
+        #expect(try await store.loadMnemonicString() == mnemonic)
         #expect(try await store.loadSeed() == seed)
 
 #if !os(Windows)
@@ -62,7 +62,7 @@ struct FileSecureStoreTests {
 
         let rotatedCiphertext = try Data(contentsOf: fileURL)
         #expect(originalCiphertext != rotatedCiphertext)
-        #expect(try await store.loadMnemonic() == "abandon ability able about above absent absorb abstract absurd abuse")
+        #expect(try await store.loadMnemonicString() == "abandon ability able about above absent absorb abstract absurd abuse")
     }
 
     @Test("FileSecureStore fails closed without a password (Phase 3.5 regression)")

@@ -210,17 +210,17 @@ public actor OptimizedProofStorage {
 /// destination). The previous implementation printed straight to stdout, which made the
 /// monitor unusable in production where stdout is not the right sink.
 public struct PerformanceMonitor {
-    private let startTime: CFAbsoluteTime
+    private let startTime: TimeInterval
     private let operation: String
 
     public init(operation: String) {
         self.operation = operation
-        self.startTime = CFAbsoluteTimeGetCurrent()
+        self.startTime = Date().timeIntervalSinceReferenceDate
     }
 
     /// Returns the elapsed time in seconds since this monitor was started.
     public func elapsedSeconds() -> TimeInterval {
-        CFAbsoluteTimeGetCurrent() - startTime
+        Date().timeIntervalSinceReferenceDate - startTime
     }
 
     /// Convenience: returns elapsed milliseconds (useful for human-readable logging).

@@ -7,13 +7,9 @@ struct TokenSerializationFuzzTests {
 
     // MARK: - Fuzz Test Generators
 
-    /// Generate random bytes for fuzzing
+    /// Generate random bytes for fuzzing — cross-platform via CoreCashu's `SecureRandom`.
     func generateRandomBytes(length: Int) -> Data {
-        var bytes = Data(count: length)
-        _ = bytes.withUnsafeMutableBytes { ptr in
-            SecRandomCopyBytes(kSecRandomDefault, length, ptr.baseAddress!)
-        }
-        return bytes
+        (try? SecureRandom.generateBytes(count: length)) ?? Data(count: length)
     }
 
     /// Generate malformed JSON strings

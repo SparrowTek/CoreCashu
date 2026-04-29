@@ -409,14 +409,14 @@ struct CryptographicTests {
     
     @Test
     func keyGenerationPerformance() async throws {
-        let startTime = CFAbsoluteTimeGetCurrent()
+        let startTime = Date().timeIntervalSinceReferenceDate
         
         // Generate 100 keypairs
         for _ in 0..<100 {
             _ = try CashuKeyUtils.generateMintKeypair()
         }
         
-        let endTime = CFAbsoluteTimeGetCurrent()
+        let endTime = Date().timeIntervalSinceReferenceDate
         let duration = endTime - startTime
         
         // Should complete in reasonable time (adjust threshold as needed)
@@ -425,14 +425,14 @@ struct CryptographicTests {
     
     @Test
     func secretGenerationPerformance() async throws {
-        let startTime = CFAbsoluteTimeGetCurrent()
+        let startTime = Date().timeIntervalSinceReferenceDate
         
         // Generate 1000 secrets
         for _ in 0..<1000 {
             _ = try CashuKeyUtils.generateRandomSecret()
         }
         
-        let endTime = CFAbsoluteTimeGetCurrent()
+        let endTime = Date().timeIntervalSinceReferenceDate
         let duration = endTime - startTime
         
         // Should complete in reasonable time

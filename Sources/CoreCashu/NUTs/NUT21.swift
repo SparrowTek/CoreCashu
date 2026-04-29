@@ -8,6 +8,10 @@
 
 import Foundation
 
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+
 // MARK: - NUT-21: Clear Authentication
 
 /// NUT-21: Clear Authentication

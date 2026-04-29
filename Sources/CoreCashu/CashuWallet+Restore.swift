@@ -36,8 +36,16 @@ public extension CashuWallet {
     static func validateMnemonic(_ mnemonic: String) -> Bool {
         return BIP39.validateMnemonic(mnemonic)
     }
-    
-    /// Initialize wallet from secure store (restore existing wallet)
+
+    /// Validate a mnemonic phrase wrapped in ``SensitiveString``. The plaintext is only
+    /// materialized inside the validator's `withString` scope.
+    static func validateMnemonic(_ mnemonic: SensitiveString) -> Bool {
+        mnemonic.withString { BIP39.validateMnemonic($0) }
+    }
+
+    /// Initialize wallet from secure store (restore existing wallet).
+    /// The loaded mnemonic stays inside ``SensitiveString`` from secure-store load through
+    /// wallet construction — the plaintext never lifts to a caller-visible `String`.
     /// - Parameters:
     ///   - configuration: Wallet configuration
     ///   - passphrase: Optional BIP39 passphrase
@@ -56,7 +64,7 @@ public extension CashuWallet {
         guard let mnemonic = try await secureStore.loadMnemonic() else {
             throw CashuError.noKeychainData
         }
-        
+
         return try await CashuWallet(
             configuration: configuration,
             mnemonic: mnemonic,

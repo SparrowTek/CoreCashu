@@ -162,7 +162,7 @@ struct NUT13Tests {
         )
         
         #expect(await wallet.state == .uninitialized)
-        let loaded = try await secureStore.loadMnemonic()
+        let loaded = try await secureStore.loadMnemonicString()
         #expect(loaded == mnemonic)
     }
 

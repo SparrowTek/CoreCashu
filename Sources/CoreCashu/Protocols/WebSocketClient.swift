@@ -1,5 +1,9 @@
 import Foundation
 
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+
 /// Protocol for WebSocket client operations used in Cashu (NUT-17)
 /// Implementations can use URLSessionWebSocketTask (Apple) or NIO WebSockets (Linux)
 public protocol WebSocketClientProtocol: Sendable {

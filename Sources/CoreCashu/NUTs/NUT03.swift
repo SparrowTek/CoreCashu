@@ -236,7 +236,8 @@ public struct SwapService: Sendable {
         targetAmount: Int,
         unit: String? = nil,
         at mintURL: String,
-        targetSecretFactory: (@Sendable () throws -> String)? = nil
+        targetSecretFactory: (@Sendable () throws -> String)? = nil,
+        deterministicOutputs: DeterministicOutputProvider? = nil
     ) async throws -> SwapPreparation {
         // Get keyset information for fee calculation
         let keysetResponse = try await keysetManagementService.getKeysets(from: mintURL)
@@ -284,34 +285,29 @@ public struct SwapService: Sendable {
             }
         }
 
-        // Helper: build a blinded output for a given amount and secret string.
-        func makeOutput(amount: Int, secret: String) throws -> (BlindedMessage, WalletBlindingData) {
-            let walletBlindingData = try WalletBlindingData(secret: secret)
-            let blindedMessage = BlindedMessage(
-                amount: amount,
-                id: activeKeyset.id,
-                B_: walletBlindingData.blindedMessage.dataRepresentation.hexString
-            )
-            return (blindedMessage, walletBlindingData)
-        }
-
         // Build target outputs (locked or anyone-can-spend depending on factory presence) and
-        // change outputs (always anyone-can-spend with a random secret) separately so the
-        // factory is only invoked for target outputs.
-        struct PendingOutput { let amount: Int; let secret: String; let isTarget: Bool }
+        // change outputs (always anyone-can-spend) separately so the factory is only invoked
+        // for target outputs. When `deterministicOutputs` is supplied, anyone-can-spend
+        // outputs (i.e., change AND non-locked target outputs) derive their secret + blinding
+        // factor from the wallet's seed so `restoreFromSeed` can rediscover them. Locked
+        // outputs always use the factory's secret (the secret carries the well-known JSON);
+        // their blinding factor is deterministic when a provider is available so the B_ value
+        // is reproducible from the seed.
+        struct PendingOutput { let amount: Int; let isTarget: Bool; let lockedSecret: String? }
         var pending: [PendingOutput] = []
         var targetSecrets: Set<String> = []
 
         for amount in targetAmountOutputs {
-            let secret = try targetSecretFactory?() ?? CashuKeyUtils.generateRandomSecret()
-            if targetSecretFactory != nil {
+            if let factory = targetSecretFactory {
+                let secret = try factory()
                 targetSecrets.insert(secret)
+                pending.append(PendingOutput(amount: amount, isTarget: true, lockedSecret: secret))
+            } else {
+                pending.append(PendingOutput(amount: amount, isTarget: true, lockedSecret: nil))
             }
-            pending.append(PendingOutput(amount: amount, secret: secret, isTarget: true))
         }
         for amount in changeOutputs {
-            let secret = try CashuKeyUtils.generateRandomSecret()
-            pending.append(PendingOutput(amount: amount, secret: secret, isTarget: false))
+            pending.append(PendingOutput(amount: amount, isTarget: false, lockedSecret: nil))
         }
 
         // Sort by ascending amount for privacy. Stable on equal amounts but ordering between
@@ -319,10 +315,45 @@ public struct SwapService: Sendable {
         // mint already knows (it sees all outputs).
         pending.sort { $0.amount < $1.amount }
 
+        // Reserve a contiguous block of counters up-front so derivation indices are
+        // deterministic even after the sort.
+        let reservedStart: UInt32?
+        if let deterministicOutputs {
+            reservedStart = await deterministicOutputs.reserve(count: pending.count, for: activeKeyset.id)
+        } else {
+            reservedStart = nil
+        }
+
         var blindedMessages: [BlindedMessage] = []
         var blindingData: [WalletBlindingData] = []
-        for output in pending {
-            let (blindedMessage, walletBlindingData) = try makeOutput(amount: output.amount, secret: output.secret)
+        for (index, output) in pending.enumerated() {
+            let walletBlindingData: WalletBlindingData
+            if let lockedSecret = output.lockedSecret {
+                // Locked outputs: secret is the well-known JSON. If we have a deterministic
+                // source, use a derived blinding factor so B_ can be reproduced; otherwise
+                // random.
+                if let deterministicOutputs, let start = reservedStart {
+                    let counter = start + UInt32(index)
+                    let r = try deterministicOutputs.derivation
+                        .deriveBlindingFactor(keysetID: activeKeyset.id, counter: counter)
+                    walletBlindingData = try WalletBlindingData(secret: lockedSecret, blindingFactor: r)
+                } else {
+                    walletBlindingData = try WalletBlindingData(secret: lockedSecret)
+                }
+            } else if let deterministicOutputs, let start = reservedStart {
+                let counter = start + UInt32(index)
+                let (secret, r) = try deterministicOutputs.derive(keysetID: activeKeyset.id, counter: counter)
+                walletBlindingData = try WalletBlindingData(secret: secret, blindingFactor: r)
+            } else {
+                let secret = try CashuKeyUtils.generateRandomSecret()
+                walletBlindingData = try WalletBlindingData(secret: secret)
+            }
+
+            let blindedMessage = BlindedMessage(
+                amount: output.amount,
+                id: activeKeyset.id,
+                B_: walletBlindingData.blindedMessage.dataRepresentation.hexString
+            )
             blindedMessages.append(blindedMessage)
             blindingData.append(walletBlindingData)
         }
@@ -350,7 +381,8 @@ public struct SwapService: Sendable {
         receivedProofs: [Proof],
         preferredDenominations: [Int]? = nil,
         unit: String? = nil,
-        at mintURL: String
+        at mintURL: String,
+        deterministicOutputs: DeterministicOutputProvider? = nil
     ) async throws -> SwapPreparation {
         // Get keyset information for fee calculation
         let keysetResponse = try await keysetManagementService.getKeysets(from: mintURL)
@@ -390,21 +422,27 @@ public struct SwapService: Sendable {
             }
         }
         
-        // Create blinded messages
-        var blindedMessages: [BlindedMessage] = []
-        var blindingData: [WalletBlindingData] = []
-        
-        for amount in outputAmounts {
-            let secret = try CashuKeyUtils.generateRandomSecret()
-            let walletBlindingData = try WalletBlindingData(secret: secret)
-            let blindedMessage = BlindedMessage(
+        // Create blinded messages. With a deterministic source, derive everything from the
+        // wallet's seed so `restoreFromSeed` can rediscover these proofs. Without one (legacy /
+        // non-mnemonic wallet), fall back to random secrets like before.
+        let blindingData: [WalletBlindingData]
+        if let deterministicOutputs {
+            blindingData = try await deterministicOutputs.makeBlindingData(
+                count: outputAmounts.count,
+                for: activeKeyset.id
+            )
+        } else {
+            blindingData = try outputAmounts.map { _ in
+                let secret = try CashuKeyUtils.generateRandomSecret()
+                return try WalletBlindingData(secret: secret)
+            }
+        }
+        let blindedMessages = zip(outputAmounts, blindingData).map { amount, data in
+            BlindedMessage(
                 amount: amount,
                 id: activeKeyset.id,
-                B_: walletBlindingData.blindedMessage.dataRepresentation.hexString
+                B_: data.blindedMessage.dataRepresentation.hexString
             )
-            
-            blindedMessages.append(blindedMessage)
-            blindingData.append(walletBlindingData)
         }
         
         return SwapPreparation(
@@ -679,27 +717,31 @@ extension SwapService {
     public func swapToSend(
         from availableProofs: [Proof],
         amount: Int,
-        at mintURL: String
+        at mintURL: String,
+        deterministicOutputs: DeterministicOutputProvider? = nil
     ) async throws -> SwapResult {
         let preparation = try await prepareSwapToSend(
             availableProofs: availableProofs,
             targetAmount: amount,
-            at: mintURL
+            at: mintURL,
+            deterministicOutputs: deterministicOutputs
         )
-        
+
         return try await executeCompleteSwap(preparation: preparation, at: mintURL)
     }
-    
+
     /// Simple swap for receiving tokens
     public func swapToReceive(
         proofs: [Proof],
-        at mintURL: String
+        at mintURL: String,
+        deterministicOutputs: DeterministicOutputProvider? = nil
     ) async throws -> SwapResult {
         let preparation = try await prepareSwapToReceive(
             receivedProofs: proofs,
-            at: mintURL
+            at: mintURL,
+            deterministicOutputs: deterministicOutputs
         )
-        
+
         return try await executeCompleteSwap(preparation: preparation, at: mintURL)
     }
 }

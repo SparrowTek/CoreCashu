@@ -318,7 +318,7 @@ public final class StructuredLogger: LoggerProtocol, @unchecked Sendable {
             FileHandle.standardOutput.write(Data((log + "\n").utf8))
 
         case .stderr:
-            fputs(log + "\n", stderr)
+            FileHandle.standardError.write(Data((log + "\n").utf8))
 
         case .file(let url):
             do {
@@ -333,8 +333,8 @@ public final class StructuredLogger: LoggerProtocol, @unchecked Sendable {
                 }
             } catch {
                 // Fallback to stderr if file writing fails
-                fputs("Failed to write log to file: \(error)\n", stderr)
-                fputs(log + "\n", stderr)
+                FileHandle.standardError.write(Data("Failed to write log to file: \(error)\n".utf8))
+                FileHandle.standardError.write(Data((log + "\n").utf8))
             }
 
         case .custom(let handler):

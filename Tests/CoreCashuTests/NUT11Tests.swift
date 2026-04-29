@@ -1,7 +1,9 @@
 import Testing
 @testable import CoreCashu
 import Foundation
+#if canImport(CryptoKit)
 import CryptoKit
+#endif
 import P256K
 
 @Suite("NUT11 - Pay to Public Key (P2PK)", .serialized)

@@ -1,6 +1,12 @@
 import Testing
 import Foundation
+
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+#if canImport(CryptoKit)
 import CryptoKit
+#endif
 @testable import CoreCashu
 
 /// HTLC Integration Tests require a live mint connection.
@@ -33,9 +39,9 @@ struct HTLCIntegrationTests {
         #expect(htlcToken.locktime == nil)
         #expect(htlcToken.refundKey == nil)
 
-        // Verify hash lock
-        let expectedHash = SHA256.hash(data: preimage)
-        let expectedHashHex = expectedHash.compactMap { String(format: "%02x", $0) }.joined()
+        // Verify hash lock — use CoreCashu's cross-platform Hash module (CryptoKit isn't
+        // available on Linux).
+        let expectedHashHex = Hash.sha256(preimage).hexString
         #expect(htlcToken.hashLock == expectedHashHex)
     }
 

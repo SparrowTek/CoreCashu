@@ -108,7 +108,7 @@ public struct ConsoleLogger: LoggerProtocol {
         // Output to appropriate stream
         let outputMessage = useColors ? colorize(logMessage, level: level) : logMessage
         if useStderr && (level >= .warning) {
-            fputs(outputMessage + "\n", stderr)
+            FileHandle.standardError.write(Data((outputMessage + "\n").utf8))
         } else {
             print(outputMessage)
         }

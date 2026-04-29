@@ -7,6 +7,61 @@ All notable changes to CoreCashu are tracked here. The format is loosely based o
 CoreCashu is currently **pre-1.0**. Every change between now and the 1.0 tag may be
 breaking; this file documents the consequential ones with migration notes.
 
+## [Unreleased] — Phase 8 follow-ups (2026-04-29)
+
+Closed every partial item from Phase 8.
+
+### Breaking
+
+- **`SecureStore.saveMnemonic(_:)` and `loadMnemonic()` now take/return `SensitiveString`**
+  as their canonical types. `String`-based overloads (`saveMnemonic(_ mnemonic: String)` and
+  `loadMnemonicString()`) are provided in a protocol extension for migration ergonomics.
+  Conformers must implement the `SensitiveString` requirements.
+- **`CashuWallet.init(configuration:mnemonic:passphrase:...)`** has a new
+  `SensitiveString`-typed initializer as the canonical form. The `String` initializer is now
+  a convenience that wraps internally.
+- **`MintService.prepareMint`, `SwapService.prepareSwapToSend`, `prepareSwapToReceive`** (and
+  the `swapToSend`/`swapToReceive` convenience wrappers) accept an optional
+  `deterministicOutputs: DeterministicOutputProvider?` parameter. Wallets initialised with
+  a mnemonic should always pass one — without it, restore-from-seed cannot rediscover issued
+  proofs. The high-level wallet operations (`mint`, `send`, `receive`, `sendLocked`,
+  `unlockP2PK`, `createHTLC`, `redeemHTLC`, `refundHTLC`) plumb the provider through
+  automatically.
+- **`AccessTokenService.requestAccessTokens`** now verifies DLEQ proofs on every returned
+  blind signature. Issuance aborts on any failure. Mints that don't return DLEQ proofs are
+  unaffected.
+
+### Added
+
+- **`Sources/CoreCashu/NUTs/NUT13/DeterministicOutputProvider.swift`** — packages the
+  derivation + counter-manager pair behind a small actor-friendly facade
+  (`reserve(count:for:)`, `derive(keysetID:counter:)`, `makeBlindingData(count:for:)`).
+- **`WalletBlindingData(secret: String, blindingFactor: Data)`** initializer — accepts a
+  caller-supplied (deterministic) blinding factor.
+- **`Sources/CoreCashu/NUTs/NUT22/BlindAuthTokenPool.swift`** — actor that holds N pre-minted
+  BATs and exposes `next()` for one-per-protected-request consumption with
+  refresh-below-watermark semantics. `BlindAuthHeader.apply(to:token:)` attaches the
+  `Blind-auth: <secret>` header to a `URLRequest`. `BlindAuthTokenPool.backed(by:...)`
+  convenience constructor wires a refresh handler that calls back into `AccessTokenService`.
+- **Phase 8 follow-ups: 1074/1074 CoreCashu tests pass on macOS** (was 1067 → +7),
+  **84/84 CashuKit tests pass** (was 78 → +6).
+- **Linux is now a first-class supported platform**. `swift build` and `swift test` both
+  pass on `swift:6.1-jammy`. CI's Linux job is required (no `continue-on-error`).
+
+### Fixed
+
+- **NUT-09 deterministic derivation bug** (surfaced in Phase 8.3, fixed here): mint and swap
+  services now thread a `DeterministicOutputProvider` through to output generation, so
+  `restoreFromSeed` can rediscover proofs the wallet itself issued. Underlying fix in
+  `WalletRestoration.blindMessage` — was hex-decoding the secret while issuance UTF-8-encoded
+  it, producing different B_ values for the same secret. Now both paths route through
+  `WalletBlindingData` so they agree byte-for-byte.
+- **Linux build issues**: `OSStatus` (Apple-only) replaced with `Int32`;
+  `CFAbsoluteTime`/`CFAbsoluteTimeGetCurrent()` replaced with `TimeInterval`/`Date()`;
+  `fputs(stderr)` replaced with `FileHandle.standardError.write(...)`; `URLSession:
+  HTTPClientProtocol` extension `#if !os(Linux)`-guarded; `import FoundationNetworking`
+  guards added to every file that uses `URLRequest`/`URLResponse`/`URLSession`.
+
 ## [Unreleased] — Phase 7 (API freeze + docs)
 
 This entry covers the Phase 7 work tracked in [`/opus47.md`](../opus47.md).

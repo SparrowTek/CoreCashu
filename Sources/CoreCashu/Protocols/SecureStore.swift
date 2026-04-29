@@ -1,23 +1,26 @@
 import Foundation
 
 /// Protocol for secure storage operations in Cashu wallet
-/// Implementations can use Keychain (Apple), file system (Linux), or in-memory storage
+/// Implementations can use Keychain (Apple), file system (Linux), or in-memory storage.
+///
+/// Phase 8.10 (2026-04-29) — completed in the Phase 8 follow-up window. Mnemonic operations now
+/// take ``SensitiveString`` as their canonical type so the plaintext lifetime is bounded by the
+/// wrapper's deinit (zero-on-drop). The legacy ``String``-based overloads live in an extension
+/// for migration ergonomics; conformers only implement the ``SensitiveString`` versions.
 public protocol SecureStore: Sendable {
-    
+
     // MARK: - Mnemonic Operations
-    
-    /// Save a BIP39 mnemonic phrase securely
-    /// - Parameter mnemonic: The mnemonic phrase to store
-    /// - Throws: An error if the storage operation fails
-    func saveMnemonic(_ mnemonic: String) async throws
-    
-    /// Load the stored mnemonic phrase
-    /// - Returns: The stored mnemonic phrase, or nil if none exists
-    /// - Throws: An error if the retrieval operation fails
-    func loadMnemonic() async throws -> String?
-    
-    /// Delete the stored mnemonic phrase
-    /// - Throws: An error if the deletion operation fails
+
+    /// Save a BIP39 mnemonic phrase securely.
+    /// - Parameter mnemonic: The mnemonic phrase to store, wrapped in `SensitiveString` so its
+    ///   plaintext is zeroed when the wrapper is released.
+    func saveMnemonic(_ mnemonic: SensitiveString) async throws
+
+    /// Load the stored mnemonic phrase.
+    /// - Returns: The stored mnemonic wrapped in `SensitiveString`, or `nil` if none exists.
+    func loadMnemonic() async throws -> SensitiveString?
+
+    /// Delete the stored mnemonic phrase.
     func deleteMnemonic() async throws
     
     // MARK: - Seed Operations
@@ -97,12 +100,33 @@ public extension SecureStore {
         // Note: Access tokens would need to be tracked separately
         // as we don't know all mint URLs
     }
-    
+
     /// Default implementation checks for mnemonic or seed
     func hasStoredData() async throws -> Bool {
         let hasMnemonic = try await loadMnemonic() != nil
         let hasSeed = try await loadSeed() != nil
         return hasMnemonic || hasSeed
+    }
+
+    // MARK: - String-based mnemonic conveniences (Phase 8.10)
+    //
+    // Forward to the canonical `SensitiveString` requirements. New code should prefer the
+    // `SensitiveString` overloads directly so the plaintext lifetime is bounded by the wrapper.
+
+    /// Save a BIP39 mnemonic from a `String`. Wraps the input in `SensitiveString` immediately
+    /// so the plaintext lifetime is bounded by the wrapper's deinit.
+    func saveMnemonic(_ mnemonic: String) async throws {
+        try await saveMnemonic(SensitiveString(mnemonic))
+    }
+
+    /// Load the stored mnemonic and copy it out as a `String` for compatibility with code
+    /// paths that haven't migrated to `SensitiveString` yet.
+    ///
+    /// **Prefer `loadMnemonic() async throws -> SensitiveString?`** in new code — the
+    /// `SensitiveString` form keeps the plaintext under the wrapper's lock and wipes on deinit.
+    func loadMnemonicString() async throws -> String? {
+        guard let sensitive = try await loadMnemonic() else { return nil }
+        return sensitive.withString { plaintext in String(plaintext) }
     }
 }
 

@@ -7,6 +7,10 @@
 
 import Foundation
 
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+
 extension JSONDecoder {
     static var cashuDecoder: JSONDecoder {
         let decoder = JSONDecoder()

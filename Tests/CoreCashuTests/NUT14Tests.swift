@@ -8,7 +8,9 @@
 import Testing
 @testable import CoreCashu
 import Foundation
+#if canImport(CryptoKit)
 import CryptoKit
+#endif
 import P256K
 
 @Suite("NUT-14 Tests", .serialized)

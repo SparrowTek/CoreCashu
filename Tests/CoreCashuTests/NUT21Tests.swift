@@ -1,5 +1,9 @@
 import Testing
 import Foundation
+
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 @testable import CoreCashu
 
 // Mock Networking for testing

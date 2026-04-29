@@ -67,12 +67,15 @@ public actor KeychainSecureStore: SecureStore {
 
     // MARK: - Mnemonic Operations
 
-    public func saveMnemonic(_ mnemonic: String) async throws {
-        try storeString(mnemonic, kind: .mnemonic)
+    public func saveMnemonic(_ mnemonic: SensitiveString) async throws {
+        try mnemonic.withString { plaintext in
+            try storeString(plaintext, kind: .mnemonic)
+        }
     }
 
-    public func loadMnemonic() async throws -> String? {
-        try loadString(kind: .mnemonic)
+    public func loadMnemonic() async throws -> SensitiveString? {
+        guard let raw = try loadString(kind: .mnemonic) else { return nil }
+        return SensitiveString(raw)
     }
 
     public func deleteMnemonic() async throws {

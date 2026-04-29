@@ -7,6 +7,10 @@
 
 import Foundation
 
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+
 struct URLParameterEncoder: ParameterEncoder {
     /// Configures how `Array` parameters are encoded.
     enum ArrayEncoding {

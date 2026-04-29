@@ -390,16 +390,17 @@ public struct MintService: Sendable {
         amount: Int,
         method: String,
         unit: String,
-        at mintURL: String
+        at mintURL: String,
+        deterministicOutputs: DeterministicOutputProvider? = nil
     ) async throws -> MintPreparation {
         let outputAmounts = createOptimalDenominations(for: amount)
 
         let keyExchangeService = await KeyExchangeService(networking: networking)
         let activeKeysets = try await keyExchangeService.getActiveKeysets(from: mintURL)
-        
+
         // Filter keysets by unit
         let unitKeysets = activeKeysets.filter { $0.unit == unit }
-        
+
         guard let activeKeyset = unitKeysets.first else {
             // Provide more specific error based on whether any keysets exist
             if activeKeysets.isEmpty {
@@ -408,23 +409,31 @@ public struct MintService: Sendable {
                 throw CashuError.keysetInactive
             }
         }
-        
-        var blindedMessages: [BlindedMessage] = []
-        var blindingData: [WalletBlindingData] = []
-        
-        for amount in outputAmounts {
-            let secret = try CashuKeyUtils.generateRandomSecret()
-            let walletBlindingData = try WalletBlindingData(secret: secret)
-            let blindedMessage = BlindedMessage(
+
+        // When the wallet has a deterministic source, derive secrets and blinding factors from
+        // (keysetID, counter) so `restoreFromSeed` can rediscover these proofs. Otherwise fall
+        // back to random secrets (legacy / non-mnemonic wallets). Phase 8.3 follow-up.
+        let blindingData: [WalletBlindingData]
+        if let deterministicOutputs {
+            blindingData = try await deterministicOutputs.makeBlindingData(
+                count: outputAmounts.count,
+                for: activeKeyset.id
+            )
+        } else {
+            blindingData = try outputAmounts.map { _ in
+                let secret = try CashuKeyUtils.generateRandomSecret()
+                return try WalletBlindingData(secret: secret)
+            }
+        }
+
+        let blindedMessages = zip(outputAmounts, blindingData).map { amount, data in
+            BlindedMessage(
                 amount: amount,
                 id: activeKeyset.id,
-                B_: walletBlindingData.blindedMessage.dataRepresentation.hexString
+                B_: data.blindedMessage.dataRepresentation.hexString
             )
-            
-            blindedMessages.append(blindedMessage)
-            blindingData.append(walletBlindingData)
         }
-        
+
         return MintPreparation(
             quote: quote,
             blindedMessages: blindedMessages,

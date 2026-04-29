@@ -9,7 +9,9 @@ import Testing
 @testable import CoreCashu
 import Foundation
 import P256K
+#if canImport(CryptoKit)
 import CryptoKit
+#endif
 
 @Suite("NUT-20 Tests", .serialized)
 struct NUT20Tests {
@@ -185,7 +187,7 @@ struct NUT20Tests {
         // Create a test message
         let message = "Test message for BIP340"
         let messageData = Data(message.utf8)
-        let messageHash = Data(CryptoKit.SHA256.hash(data: messageData))
+        let messageHash = Hash.sha256( messageData)
         
         // Sign the message using our implementation
         let signatureHex = try NUT20SignatureManager.signMessage(
@@ -212,7 +214,7 @@ struct NUT20Tests {
         
         // Create original message and sign it
         let originalMessage = Data("Original message".utf8)
-        let originalHash = Data(CryptoKit.SHA256.hash(data: originalMessage))
+        let originalHash = Hash.sha256( originalMessage)
         
         let signatureHex = try NUT20SignatureManager.signMessage(
             messageHash: originalHash,
@@ -221,7 +223,7 @@ struct NUT20Tests {
         
         // Try to verify with a different message
         let wrongMessage = Data("Wrong message".utf8)
-        let wrongHash = Data(CryptoKit.SHA256.hash(data: wrongMessage))
+        let wrongHash = Hash.sha256( wrongMessage)
         
         let isValid = try NUT20SignatureManager.verifySignature(
             signature: signatureHex,
@@ -243,7 +245,7 @@ struct NUT20Tests {
         
         // Create message and sign with first key
         let message = Data("Test message".utf8)
-        let messageHash = Data(CryptoKit.SHA256.hash(data: message))
+        let messageHash = Hash.sha256( message)
         
         let signatureHex = try NUT20SignatureManager.signMessage(
             messageHash: messageHash,

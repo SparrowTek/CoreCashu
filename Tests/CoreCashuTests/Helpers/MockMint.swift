@@ -1,4 +1,8 @@
 import Foundation
+
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 @preconcurrency import P256K
 @testable import CoreCashu
 

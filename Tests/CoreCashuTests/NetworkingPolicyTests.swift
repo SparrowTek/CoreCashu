@@ -2,6 +2,10 @@ import Testing
 @testable import CoreCashu
 import Foundation
 
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+
 @Suite("Networking policy", .serialized)
 struct NetworkingPolicyTests {
 

@@ -12,10 +12,10 @@ struct KeychainSecureStoreShimTests {
         let mnemonic = "abandon ability able about above absent absorb abstract absurd abuse"
 
         try await store.saveMnemonic(mnemonic)
-        #expect(try await store.loadMnemonic() == mnemonic)
+        #expect(try await store.loadMnemonicString() == mnemonic)
 
         try await store.deleteMnemonic()
-        #expect(try await store.loadMnemonic() == nil)
+        #expect(try await store.loadMnemonicString() == nil)
     }
 
     @Test("Access token round trip on shim")
@@ -43,12 +43,15 @@ private actor InMemoryKeychainSecureStore: SecureStore {
 
     private var storage: [StorageKey: Data] = [:]
 
-    func saveMnemonic(_ mnemonic: String) async throws {
-        try saveString(mnemonic, kind: .mnemonic)
+    func saveMnemonic(_ mnemonic: SensitiveString) async throws {
+        try mnemonic.withString { plaintext in
+            try saveString(plaintext, kind: .mnemonic)
+        }
     }
 
-    func loadMnemonic() async throws -> String? {
-        try loadString(kind: .mnemonic)
+    func loadMnemonic() async throws -> SensitiveString? {
+        guard let raw = try loadString(kind: .mnemonic) else { return nil }
+        return SensitiveString(raw)
     }
 
     func deleteMnemonic() async throws {

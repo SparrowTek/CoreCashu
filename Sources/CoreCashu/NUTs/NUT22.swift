@@ -190,23 +190,47 @@ public actor AccessTokenService: Sendable {
             payload: try request.toJSONData()
         )
         
-        // Unblind signatures and create access token proofs
-        let proofs = try zip(zip(response.signatures, secrets), factors).map { (sigSecret, factor) in
+        // Unblind signatures and create access token proofs.
+        //
+        // Phase 8.2 follow-up (2026-04-29): when the mint includes a DLEQ proof on a returned
+        // BlindSignature, verify it before storing. Aborts the entire issuance on any DLEQ
+        // failure — partial acceptance would let a misbehaving mint mix valid and invalid
+        // BATs into the wallet's pool.
+        let proofs = try zip(zip(response.signatures, secrets), zip(factors, blindedMessages)).map { (sigSecret, factorAndMessage) in
             let (signature, secret) = sigSecret
-            
+            let (factor, blindedMessage) = factorAndMessage
+
             // Get the public key for this amount
             guard let publicKeyHex = keyset.keys[String(signature.amount)],
                   let publicKeyData = Data(hexString: publicKeyHex),
                   let publicKey = try? P256K.KeyAgreement.PublicKey(dataRepresentation: publicKeyData, format: .compressed) else {
                 throw CashuError.keyGenerationFailed
             }
-            
+
+            if let dleq = signature.dleq {
+                guard let blindedMessageData = Data(hexString: blindedMessage.B_),
+                      let blindedSigData = Data(hexString: signature.C_),
+                      let blindedMessagePoint = try? P256K.KeyAgreement.PublicKey(dataRepresentation: blindedMessageData, format: .compressed),
+                      let blindedSignaturePoint = try? P256K.KeyAgreement.PublicKey(dataRepresentation: blindedSigData, format: .compressed) else {
+                    throw CashuError.invalidSignature("BAT issuance: malformed blinded signature or message")
+                }
+                let valid = try verifyDLEQProofAlice(
+                    proof: dleq,
+                    mintPublicKey: publicKey,
+                    blindedMessage: blindedMessagePoint,
+                    blindedSignature: blindedSignaturePoint
+                )
+                guard valid else {
+                    throw CashuError.invalidSignature("BAT issuance: DLEQ proof verification failed")
+                }
+            }
+
             let C = try unblindSignature(
                 blindSignature: signature.C_,
                 blindingFactor: factor,
                 publicKey: publicKey
             )
-            
+
             return Proof(
                 amount: signature.amount,
                 id: signature.id,

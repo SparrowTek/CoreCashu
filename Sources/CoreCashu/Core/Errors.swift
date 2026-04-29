@@ -162,7 +162,9 @@ public enum CashuError: Error, Sendable {
     case jsonDecodingError
     case hexDecodingError
     case base64DecodingError
-    case unhandledError(OSStatus)
+    /// Wraps an Apple `OSStatus`-like integer code without depending on the Apple-only
+    /// `OSStatus` typealias (which doesn't exist on Linux). Phase 8.13.
+    case unhandledError(Int32)
     case unknownError
     case notImplemented
     case invalidDerivationPath

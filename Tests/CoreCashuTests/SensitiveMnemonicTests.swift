@@ -55,4 +55,25 @@ struct SensitiveMnemonicTests {
         #expect(!nonEmpty.isEmpty)
         #expect(empty.isEmpty)
     }
+
+    @Test("SecureStore round-trips a SensitiveString mnemonic without lifting plaintext to a String")
+    func secureStoreSensitiveRoundTrip() async throws {
+        let store = InMemorySecureStore()
+        let original = SensitiveString(Self.knownGoodMnemonic)
+
+        try await store.saveMnemonic(original)
+        let loaded = try await store.loadMnemonic()
+        #expect(loaded != nil)
+
+        let matches = loaded?.withString { $0 == Self.knownGoodMnemonic } ?? false
+        #expect(matches, "wrapped mnemonic should round-trip equal to the original under withString")
+    }
+
+    @Test("SecureStore.loadMnemonicString convenience returns the same value as String save+load")
+    func secureStoreStringConvenience() async throws {
+        let store = InMemorySecureStore()
+        try await store.saveMnemonic(Self.knownGoodMnemonic) // exercises the String overload
+        let loaded = try await store.loadMnemonicString()
+        #expect(loaded == Self.knownGoodMnemonic)
+    }
 }

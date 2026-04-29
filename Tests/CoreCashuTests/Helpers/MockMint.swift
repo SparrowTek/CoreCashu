@@ -171,6 +171,11 @@ public final class MockMint: Sendable {
         private(set) var swapTotal: Int = 0
         private(set) var meltTotal: Int = 0
 
+        /// NUT-09 restore-cache: every (B_, BlindSignature) we've ever signed, keyed by the
+        /// blinded-message hex (`B_` field). The wallet sends the deterministic outputs back and
+        /// we return every match. Real mints persist this in their own database.
+        private var signedOutputs: [String: (output: BlindedMessage, signature: BlindSignature)] = [:]
+
         init(keysetID: String, keypairs: [Int: MintKeypair], keyMap: [String: String], configuration: Configuration) {
             self.keysetID = keysetID
             self.keypairs = keypairs
@@ -272,6 +277,8 @@ public final class MockMint: Sendable {
                 return try encode(try swap(requestBody: try requireBody(request: request)))
             case ("POST", ["v1", "checkstate"]):
                 return try encode(try checkState(requestBody: try requireBody(request: request)))
+            case ("POST", ["v1", "restore"]):
+                return try encode(try restoreHandler(requestBody: try requireBody(request: request)))
             default:
                 break
             }
@@ -541,8 +548,26 @@ public final class MockMint: Sendable {
                 }
                 let mint = Mint(privateKey: keypair.privateKey)
                 let blindSignatureData = try mint.signBlindedMessage(blindData)
-                return BlindSignature(amount: message.amount, id: keysetID, C_: blindSignatureData.hexString, dleq: nil)
+                let signature = BlindSignature(amount: message.amount, id: keysetID, C_: blindSignatureData.hexString, dleq: nil)
+                // NUT-09: persist (output, signature) so a future /v1/restore can find it.
+                signedOutputs[message.B_] = (message, signature)
+                return signature
             }
+        }
+
+        // NUT-09 restore: return the matching (output, signature) tuples for every input output
+        // we've signed before. The order of outputs is preserved per spec.
+        private func restoreHandler(requestBody: Data) throws -> PostRestoreResponse {
+            let req = try JSONDecoder.cashuDecoder.decode(PostRestoreRequest.self, from: requestBody)
+            var matchedOutputs: [BlindedMessage] = []
+            var matchedSignatures: [BlindSignature] = []
+            for output in req.outputs {
+                if let pair = signedOutputs[output.B_] {
+                    matchedOutputs.append(pair.output)
+                    matchedSignatures.append(pair.signature)
+                }
+            }
+            return PostRestoreResponse(outputs: matchedOutputs, signatures: matchedSignatures)
         }
 
         private func verifyAndConsume(proof: Proof) throws {

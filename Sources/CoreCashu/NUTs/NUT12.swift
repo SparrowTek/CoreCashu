@@ -206,11 +206,11 @@ public func generateDLEQProof(
     let r = try P256K.KeyAgreement.PrivateKey(dataRepresentation: rData)
     
     // Step 2: Calculate R1 = r*G
-    let G = try getGeneratorPoint()
-    let R1 = try multiplyPoint(G, by: r)
-    
+    let G = try BDHKE.generatorPoint()
+    let R1 = try BDHKE.multiply(point: G, scalar: r)
+
     // Step 3: Calculate R2 = r*B'
-    let R2 = try multiplyPoint(blindedMessage, by: r)
+    let R2 = try BDHKE.multiply(point: blindedMessage, scalar: r)
     
     // Step 4: Calculate e = hash(R1, R2, A, C')
     let A = privateKey.publicKey
@@ -253,28 +253,28 @@ public func verifyDLEQProofAlice(
     let eScalar = Data(eData.prefix(32))
     
     // Step 1: Calculate R1 = s*G - e*A
-    let G = try getGeneratorPoint()
-    
+    let G = try BDHKE.generatorPoint()
+
     // s*G
     let sPrivateKey = try P256K.KeyAgreement.PrivateKey(dataRepresentation: sData)
-    let sG = try multiplyPoint(G, by: sPrivateKey)
-    
+    let sG = try BDHKE.multiply(point: G, scalar: sPrivateKey)
+
     // e*A
     let ePrivateKey = try P256K.KeyAgreement.PrivateKey(dataRepresentation: eScalar)
-    let eA = try multiplyPoint(mintPublicKey, by: ePrivateKey)
-    
+    let eA = try BDHKE.multiply(point: mintPublicKey, scalar: ePrivateKey)
+
     // R1 = s*G - e*A
-    let R1 = try subtractPoints(sG, eA)
-    
+    let R1 = try BDHKE.subtract(sG, eA)
+
     // Step 2: Calculate R2 = s*B' - e*C'
     // s*B'
-    let sB = try multiplyPoint(blindedMessage, by: sPrivateKey)
-    
+    let sB = try BDHKE.multiply(point: blindedMessage, scalar: sPrivateKey)
+
     // e*C'
-    let eC = try multiplyPoint(blindedSignature, by: ePrivateKey)
-    
+    let eC = try BDHKE.multiply(point: blindedSignature, scalar: ePrivateKey)
+
     // R2 = s*B' - e*C'
-    let R2 = try subtractPoints(sB, eC)
+    let R2 = try BDHKE.subtract(sB, eC)
     
     // Step 3: Verify e == hash(R1, R2, A, C')
     let computedE = try hashDLEQ(R1, R2, mintPublicKey, blindedSignature)
@@ -303,16 +303,16 @@ public func verifyDLEQProofCarol(
     let r = try P256K.KeyAgreement.PrivateKey(dataRepresentation: rData)
     
     // Step 1: Reconstruct Y = hash_to_curve(x)
-    let Y = try hashToCurve(secret)
-    
+    let Y = try BDHKE.hashToCurve(secret)
+
     // Step 2: Reconstruct C' = C + r*A
-    let rA = try multiplyPoint(mintPublicKey, by: r)
-    let CPrime = try addPoints(signature, rA)
-    
+    let rA = try BDHKE.multiply(point: mintPublicKey, scalar: r)
+    let CPrime = try BDHKE.add(signature, rA)
+
     // Step 3: Reconstruct B' = Y + r*G
-    let G = try getGeneratorPoint()
-    let rG = try multiplyPoint(G, by: r)
-    let BPrime = try addPoints(Y, rG)
+    let G = try BDHKE.generatorPoint()
+    let rG = try BDHKE.multiply(point: G, scalar: r)
+    let BPrime = try BDHKE.add(Y, rG)
     
     // Step 4: Verify the DLEQ proof with reconstructed values
     return try verifyDLEQProofAlice(

@@ -52,7 +52,7 @@ struct NUT00Tests {
                 throw CashuError.invalidHexString
             }
             
-            let point = try hashToCurve(messageData)
+            let point = try BDHKE.hashToCurve(messageData)
             let pointHex = point.dataRepresentation.hexString
             
             #expect(pointHex == testVector.expectedPoint, "Hash-to-curve failed for message: \(testVector.message)")
@@ -92,12 +92,12 @@ struct NUT00Tests {
             
             // Y = hash_to_curve(secret)
             // Note: In the test vectors, secrets are hex-encoded and should be treated as raw bytes
-            let Y = try hashToCurve(secretData)
-            
+            let Y = try BDHKE.hashToCurve(secretData)
+
             // Calculate B_ = Y + r*G
-            let generatorPoint = try getGeneratorPoint()
-            let rG = try multiplyPoint(generatorPoint, by: blindingFactorKey)
-            let B_ = try addPoints(Y, rG)
+            let generatorPoint = try BDHKE.generatorPoint()
+            let rG = try BDHKE.multiply(point: generatorPoint, scalar: blindingFactorKey)
+            let B_ = try BDHKE.add(Y, rG)
             let B_Hex = B_.dataRepresentation.hexString
             
             #expect(B_Hex == testVector.expectedBlindedPoint, "Blinded message calculation failed for secret: \(testVector.secret)")

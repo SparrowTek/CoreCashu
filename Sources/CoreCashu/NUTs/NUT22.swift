@@ -113,6 +113,22 @@ public struct NUT22Settings: CashuCodabale, Sendable {
     }
 }
 
+// MARK: - NUT-22 endpoint paths
+
+/// Centralised spec endpoints for NUT-22 (Blind authentication / BAT issuance).
+public enum NUT22Endpoints: Sendable {
+    /// Spec-correct path for issuing Blind Authentication Tokens (replaces the legacy
+    /// `/v1/access`). Phase 8.2.
+    public static let blindMint = "/v1/auth/blind/mint"
+
+    /// Legacy path retained for documentation only. Old mints may still respond on this path
+    /// during transition; new code should use ``blindMint``.
+    public static let legacyAccess = "/v1/access"
+
+    /// Header name for protected requests that consume one BAT each.
+    public static let blindAuthHeader = "Blind-auth"
+}
+
 // MARK: - Access Token Service
 
 /// Service for managing NUT-22 access tokens
@@ -155,11 +171,22 @@ public actor AccessTokenService: Sendable {
             return BlindedMessage(amount: 1, id: keysetId, B_: B_.hexString)
         }
         
-        // Request blind signatures
+        // Request blind signatures.
+        //
+        // Phase 8.2 (2026-04-29): the spec uses `POST /v1/auth/blind/mint` for issuing BATs;
+        // the legacy `/v1/access` path was incorrect. Existing mints may still expose the legacy
+        // path under a different deployment, so we keep a constant rather than hard-coding the
+        // string in line. **Two known gaps remain before this can be advertised publicly:**
+        //   1. DLEQ proofs (NUT-12) at issuance are NOT yet verified — the mint's blind
+        //      signatures are accepted without checking that they prove correct issuance.
+        //   2. The `Blind-auth: <token>` header consumption flow is not implemented (BAT pool
+        //      semantics pending).
+        // Both are tracked in `Docs/NUT_STATUS.md` row 22; the `.accessTokenAuth` capability
+        // flag must stay off until both land.
         let request = PostAccessTokenRequest(quoteId: quoteId, blindedMessages: blindedMessages)
         let response: PostAccessTokenResponse = try await networkService.execute(
             method: "POST",
-            path: "/v1/access",
+            path: NUT22Endpoints.blindMint,
             payload: try request.toJSONData()
         )
         
@@ -295,13 +322,13 @@ private func generateRandomBytes(count: Int) throws -> Data {
 /// Blind a message using the same implementation as NUT-13
 private func blindMessage(secret: Data, blindingFactor: Data) throws -> Data {
     // Y = hash_to_curve(secret)
-    let Y = try hashToCurve(secret)
-    
+    let Y = try BDHKE.hashToCurve(secret)
+
     // r*G
     let rG = try P256K.KeyAgreement.PrivateKey(dataRepresentation: blindingFactor).publicKey
-    
+
     // B_ = Y + r*G
-    let B_ = try addPoints(Y, rG)
+    let B_ = try BDHKE.add(Y, rG)
     
     return B_.dataRepresentation
 }
@@ -317,10 +344,10 @@ private func unblindSignature(blindSignature: String, blindingFactor: Data, publ
     
     // r*K
     let rPrivKey = try P256K.KeyAgreement.PrivateKey(dataRepresentation: blindingFactor)
-    let rK = try multiplyPoint(publicKey, by: rPrivKey)
-    
+    let rK = try BDHKE.multiply(point: publicKey, scalar: rPrivKey)
+
     // C = C_ - r*K
-    let C = try subtractPoints(C_, rK)
+    let C = try BDHKE.subtract(C_, rK)
     
     return C.dataRepresentation
 }

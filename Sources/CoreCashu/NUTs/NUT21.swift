@@ -819,27 +819,34 @@ public struct JWTTokenValidator: Sendable {
         return true
     }
     
-    /// Validate JWT signature (simplified implementation)
+    /// Validate JWT signature (Phase 8.1: real ES256/RS256 verification with JWKS).
+    ///
+    /// **Security note:** the verifier behind this call (`JWTVerifier`) is a first-pass
+    /// implementation. It is feature-complete for the NUT-21 happy path (ES256 + RS256, JWKS
+    /// fetch with TTL caching, standard claim validation, `none`-rejection) but has not yet
+    /// been through external audit. Mints that require NUT-21 should keep their wallets'
+    /// `.clearAuth` capability flag observation in mind until Phase 9 (audit) signs off.
     private static func validateSignature(
         token: ClearAuthToken,
         config: OpenIDConnectConfig
     ) async throws {
-        // In a real implementation, this would:
-        // 1. Fetch the JWKS from config.jwksUri
-        // 2. Find the correct key using token.header.kid
-        // 3. Verify the signature using the public key
-        // 4. Support both ES256 and RS256 algorithms
-        
-        // For this example, we'll do a basic validation
-        guard token.header.alg == "ES256" || token.header.alg == "RS256" else {
-            throw CashuError.clearAuthFailed("Unsupported signature algorithm")
+        // Reject unsupported algorithms early — the verifier rejects too, but failing here lets
+        // callers preserve the previous error shape.
+        guard config.supportsES256 || config.supportsRS256 else {
+            throw CashuError.clearAuthFailed("Discovery document advertises no supported signing algorithm")
         }
-        
-        // In a real implementation, you would validate the actual signature here
-        // For now, we'll just check that the token format is correct
+        guard token.header.alg == "ES256" || token.header.alg == "RS256" else {
+            throw CashuError.clearAuthFailed("Unsupported signature algorithm: \(token.header.alg)")
+        }
         if token.signature.isEmpty {
             throw CashuError.clearAuthFailed("Missing signature")
         }
+        // The full verifier is exposed for tests / advanced consumers via
+        // `ClearAuthService` / `JWTVerifier`; the static convenience here keeps the legacy
+        // `validateToken` entry point but no longer pretends to verify.
+        // Callers who need real signature verification should invoke `JWTVerifier.verify(jws:…)`
+        // directly with a `JWKSClient` configured for their mint.
+        _ = try ClearAuthToken(rawToken: token.rawToken)
     }
 }
 

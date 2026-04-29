@@ -142,7 +142,7 @@ extension Proof {
     /// Calculate Y = hash_to_curve(secret) for this proof
     /// This is the Y value used in checkstate requests
     public func calculateY() throws -> String {
-        let secretPoint = try hashToCurve(self.secret)
+        let secretPoint = try BDHKE.hashToCurve(self.secret)
         return secretPoint.dataRepresentation.hexString
     }
     

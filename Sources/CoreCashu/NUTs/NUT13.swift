@@ -29,14 +29,26 @@ public struct DeterministicSecretDerivation: Sendable {
     }
     
     public init(mnemonic: String, passphrase: String = "") throws {
-        // Validate mnemonic
-        // Validate using BIP39 implementation
-        guard BIP39.validateMnemonic(mnemonic) else {
+        // Wrap immediately so the seed-derivation chain operates on a buffer that wipes on
+        // deinit. Phase 8.10 (2026-04-29).
+        let sensitive = SensitiveString(mnemonic)
+        try self.init(mnemonic: sensitive, passphrase: passphrase)
+    }
+
+    /// `SensitiveString`-typed initializer (Phase 8.10). Prefer this overload — the wrapped
+    /// mnemonic is wiped from memory on deinit, and the `withString` block scopes plaintext
+    /// access to the seed-derivation step.
+    public init(mnemonic: SensitiveString, passphrase: String = "") throws {
+        let isValid = mnemonic.withString { BIP39.validateMnemonic($0) }
+        guard isValid else {
             throw CashuError.invalidMnemonic
         }
-        
-        // This follows BIP39 standard: PBKDF2 with HMAC-SHA512
-        let seed = createSeedFromMnemonic(mnemonic: mnemonic, passphrase: passphrase)
+
+        // Materialize the seed under the lock and let the SensitiveString deinit wipe the buffer
+        // on scope exit.
+        let seed = mnemonic.withString { plaintext in
+            createSeedFromMnemonic(mnemonic: plaintext, passphrase: passphrase)
+        }
         self.masterKey = createMasterKeyFromSeed(seed: seed)
     }
     
@@ -227,15 +239,15 @@ public struct WalletRestoration: Sendable {
         }
         
         // Y = hash_to_curve(secret)
-        let Y = try hashToCurve(secretData)
-        
+        let Y = try BDHKE.hashToCurve(secretData)
+
         // r*G
         let rPrivateKey = try P256K.KeyAgreement.PrivateKey(dataRepresentation: r)
-        let G = try getGeneratorPoint()
-        let rG = try multiplyPoint(G, by: rPrivateKey)
-        
+        let G = try BDHKE.generatorPoint()
+        let rG = try BDHKE.multiply(point: G, scalar: rPrivateKey)
+
         // B_ = Y + r*G
-        let B_ = try addPoints(Y, rG)
+        let B_ = try BDHKE.add(Y, rG)
         
         return B_.dataRepresentation.hexString
     }
@@ -249,8 +261,8 @@ public struct WalletRestoration: Sendable {
         let rPrivateKey = try P256K.KeyAgreement.PrivateKey(dataRepresentation: r)
         
         // Unblind: C = C_ - r*K
-        let rK = try multiplyPoint(mintPublicKey, by: rPrivateKey)
-        let C = try subtractPoints(C_, rK)
+        let rK = try BDHKE.multiply(point: mintPublicKey, scalar: rPrivateKey)
+        let C = try BDHKE.subtract(C_, rK)
         
         return C.dataRepresentation.hexString
     }

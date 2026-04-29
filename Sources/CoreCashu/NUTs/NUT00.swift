@@ -51,110 +51,140 @@ extension P256K.KeyAgreement.PublicKey {
     }
 }
 
-// MARK: - Hash to Curve Implementation (NUT-00 Specification)
+// MARK: - BDHKE Primitives Namespace
+//
+// Phase 8.11 (2026-04-29): Low-level Blind Diffie-Hellman Key Exchange primitives are namespaced
+// under `BDHKE` to signal "advanced — you are off the supported wallet path." High-level wallet
+// users should never need to call into this namespace directly. The legacy top-level functions
+// (`hashToCurve`, `getGeneratorPoint`, `multiplyPoint`, `addPoints`, `subtractPoints`) remain as
+// deprecated thin wrappers for one migration cycle and forward to these implementations.
 
-/// Maps a message to a public key point on the secp256k1 curve
-/// Y = hash_to_curve(x) where x is the secret message
-/// Implementation follows NUT-00: Y = PublicKey('02' || SHA256(msg_hash || counter))
-public func hashToCurve(_ message: Data) throws -> P256K.KeyAgreement.PublicKey {
-    try CryptoLock.shared.withLock {
-        /// Domain separator for hash-to-curve operations in Cashu
-        guard let DOMAIN_SEPARATOR = "Secp256k1_HashToCurve_Cashu_".data(using: .utf8) else { throw CashuError.domainSeperator }
+/// Low-level cryptographic primitives that implement the Blind Diffie-Hellman Key Exchange.
+///
+/// Most consumers should use the high-level wallet API (``CashuWallet``) instead. The members
+/// of this namespace are exposed for advanced consumers who need to construct or verify proofs
+/// outside the wallet boundary.
+public enum BDHKE {
 
-        // Create message hash: SHA256(DOMAIN_SEPARATOR || x)
-        let msgHash = Hash.sha256(DOMAIN_SEPARATOR + message)
-
-        // Try different counter values until we find a valid point
-        for counter in 0..<UInt32.max {
-            // Convert counter to little-endian bytes
-            let counterBytes = withUnsafeBytes(of: counter.littleEndian) { Data($0) }
-
-            // Create candidate: SHA256(msg_hash || counter)
-            let candidate = Hash.sha256(msgHash + counterBytes)
-
-            // Try to create a public key with prefix '02' (compressed format)
-            let candidateWithPrefix = Data([0x02]) + candidate
-
-            do {
-                let publicKey = try P256K.KeyAgreement.PublicKey(dataRepresentation: candidateWithPrefix, format: .compressed)
-                return publicKey
-            } catch {
-                // This candidate doesn't form a valid point, try next counter
-                continue
+    /// Maps a message to a public key point on the secp256k1 curve.
+    ///
+    /// `Y = hash_to_curve(x)` where `x` is the secret message. Implementation follows NUT-00:
+    /// `Y = PublicKey('02' || SHA256(msg_hash || counter))` with the Cashu domain separator.
+    public static func hashToCurve(_ message: Data) throws -> P256K.KeyAgreement.PublicKey {
+        try CryptoLock.shared.withLock {
+            guard let domainSeparator = "Secp256k1_HashToCurve_Cashu_".data(using: .utf8) else {
+                throw CashuError.domainSeperator
             }
-        }
 
-        throw CashuError.hashToCurveFailed
+            let msgHash = Hash.sha256(domainSeparator + message)
+
+            for counter in 0..<UInt32.max {
+                let counterBytes = withUnsafeBytes(of: counter.littleEndian) { Data($0) }
+                let candidate = Hash.sha256(msgHash + counterBytes)
+                let candidateWithPrefix = Data([0x02]) + candidate
+
+                do {
+                    return try P256K.KeyAgreement.PublicKey(dataRepresentation: candidateWithPrefix, format: .compressed)
+                } catch {
+                    continue
+                }
+            }
+
+            throw CashuError.hashToCurveFailed
+        }
+    }
+
+    /// Convenience overload accepting a UTF-8 string. Throws if the string is not UTF-8 representable.
+    @discardableResult
+    public static func hashToCurve(_ message: String) throws -> P256K.KeyAgreement.PublicKey {
+        guard let data = message.data(using: .utf8) else {
+            throw CashuError.invalidSecretLength
+        }
+        return try hashToCurve(data)
+    }
+
+    /// Returns the secp256k1 generator point `G`.
+    public static func generatorPoint() throws -> P256K.KeyAgreement.PublicKey {
+        try CryptoLock.shared.withLock {
+            let oneData = Data([
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01
+            ])
+
+            let privateKeyOne = try P256K.KeyAgreement.PrivateKey(dataRepresentation: oneData)
+            return privateKeyOne.publicKey
+        }
+    }
+
+    /// Multiplies a point by a scalar (private key): `scalar * point`.
+    public static func multiply(
+        point: P256K.KeyAgreement.PublicKey,
+        scalar: P256K.KeyAgreement.PrivateKey
+    ) throws -> P256K.KeyAgreement.PublicKey {
+        try CryptoLock.shared.withLock {
+            let signingPoint = try P256K.Signing.PublicKey(dataRepresentation: point.dataRepresentation, format: .compressed)
+            let signingScalar = try P256K.Signing.PrivateKey(dataRepresentation: scalar.rawRepresentation)
+            let resultSigningPoint = try signingPoint.multiply(signingScalar.dataRepresentation.bytes, format: .compressed)
+            return try P256K.KeyAgreement.PublicKey(dataRepresentation: resultSigningPoint.dataRepresentation, format: .compressed)
+        }
+    }
+
+    /// Adds two points on the secp256k1 curve.
+    public static func add(
+        _ point1: P256K.KeyAgreement.PublicKey,
+        _ point2: P256K.KeyAgreement.PublicKey
+    ) throws -> P256K.KeyAgreement.PublicKey {
+        try CryptoLock.shared.withLock {
+            let signingPoint1 = try P256K.Signing.PublicKey(dataRepresentation: point1.dataRepresentation, format: .compressed)
+            let signingPoint2 = try P256K.Signing.PublicKey(dataRepresentation: point2.dataRepresentation, format: .compressed)
+            let resultSigningPoint = try signingPoint1.combine([signingPoint2], format: .compressed)
+            return try P256K.KeyAgreement.PublicKey(dataRepresentation: resultSigningPoint.dataRepresentation, format: .compressed)
+        }
+    }
+
+    /// Subtracts the second point from the first on the secp256k1 curve.
+    public static func subtract(
+        _ point1: P256K.KeyAgreement.PublicKey,
+        _ point2: P256K.KeyAgreement.PublicKey
+    ) throws -> P256K.KeyAgreement.PublicKey {
+        let negatedPoint2 = try point2.negation
+        return try add(point1, negatedPoint2)
     }
 }
 
-/// Convenience function for string messages
+// MARK: - Deprecated top-level aliases (Phase 8.11 migration window)
+
+@available(*, deprecated, renamed: "BDHKE.hashToCurve(_:)", message: "Low-level BDHKE primitives moved under the BDHKE namespace in Phase 8.11. Use BDHKE.hashToCurve(_:) instead.")
+public func hashToCurve(_ message: Data) throws -> P256K.KeyAgreement.PublicKey {
+    try BDHKE.hashToCurve(message)
+}
+
+@available(*, deprecated, renamed: "BDHKE.hashToCurve(_:)", message: "Low-level BDHKE primitives moved under the BDHKE namespace in Phase 8.11. Use BDHKE.hashToCurve(_:) instead.")
 @discardableResult
 public func hashToCurve(_ message: String) throws -> P256K.KeyAgreement.PublicKey {
-    guard let data = message.data(using: .utf8) else {
-        throw CashuError.invalidSecretLength
-    }
-    return try hashToCurve(data)
+    try BDHKE.hashToCurve(message)
 }
 
-// MARK: - Generator Point
-
-/// Get the secp256k1 generator point G
+@available(*, deprecated, renamed: "BDHKE.generatorPoint()", message: "Low-level BDHKE primitives moved under the BDHKE namespace in Phase 8.11. Use BDHKE.generatorPoint() instead.")
 public func getGeneratorPoint() throws -> P256K.KeyAgreement.PublicKey {
-    try CryptoLock.shared.withLock {
-        // Create a private key with value 1 to get G = 1*G
-        let oneData = Data([
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01
-        ])
-
-        let privateKeyOne = try P256K.KeyAgreement.PrivateKey(dataRepresentation: oneData)
-        return privateKeyOne.publicKey
-    }
+    try BDHKE.generatorPoint()
 }
 
-// MARK: - Scalar Multiplication
-
-/// Multiply a point by a scalar (private key): scalar * point
-/// This implements k * P where k is a private key and P is a point
+@available(*, deprecated, renamed: "BDHKE.multiply(point:scalar:)", message: "Low-level BDHKE primitives moved under the BDHKE namespace in Phase 8.11. Use BDHKE.multiply(point:scalar:) instead.")
 public func multiplyPoint(_ point: P256K.KeyAgreement.PublicKey, by scalar: P256K.KeyAgreement.PrivateKey) throws -> P256K.KeyAgreement.PublicKey {
-    try CryptoLock.shared.withLock {
-        // Convert to Signing keys to use the tweak multiply functionality
-        let signingPoint = try P256K.Signing.PublicKey(dataRepresentation: point.dataRepresentation, format: .compressed)
-        let signingScalar = try P256K.Signing.PrivateKey(dataRepresentation: scalar.rawRepresentation)
-
-        // Use the tweak multiply functionality: point * scalar
-        let resultSigningPoint = try signingPoint.multiply(signingScalar.dataRepresentation.bytes, format: .compressed)
-
-        // Convert back to KeyAgreement key
-        return try P256K.KeyAgreement.PublicKey(dataRepresentation: resultSigningPoint.dataRepresentation, format: .compressed)
-    }
+    try BDHKE.multiply(point: point, scalar: scalar)
 }
 
-// MARK: - Point Addition
-
-/// Add two points on the secp256k1 curve
+@available(*, deprecated, renamed: "BDHKE.add(_:_:)", message: "Low-level BDHKE primitives moved under the BDHKE namespace in Phase 8.11. Use BDHKE.add(_:_:) instead.")
 public func addPoints(_ point1: P256K.KeyAgreement.PublicKey, _ point2: P256K.KeyAgreement.PublicKey) throws -> P256K.KeyAgreement.PublicKey {
-    try CryptoLock.shared.withLock {
-        // Convert to Signing keys to use the combine functionality
-        let signingPoint1 = try P256K.Signing.PublicKey(dataRepresentation: point1.dataRepresentation, format: .compressed)
-        let signingPoint2 = try P256K.Signing.PublicKey(dataRepresentation: point2.dataRepresentation, format: .compressed)
-
-        // Use the combine functionality to add points
-        let resultSigningPoint = try signingPoint1.combine([signingPoint2], format: .compressed)
-
-        // Convert back to KeyAgreement key
-        return try P256K.KeyAgreement.PublicKey(dataRepresentation: resultSigningPoint.dataRepresentation, format: .compressed)
-    }
+    try BDHKE.add(point1, point2)
 }
 
-/// Subtract two points on the secp256k1 curve (point1 - point2)
+@available(*, deprecated, renamed: "BDHKE.subtract(_:_:)", message: "Low-level BDHKE primitives moved under the BDHKE namespace in Phase 8.11. Use BDHKE.subtract(_:_:) instead.")
 public func subtractPoints(_ point1: P256K.KeyAgreement.PublicKey, _ point2: P256K.KeyAgreement.PublicKey) throws -> P256K.KeyAgreement.PublicKey {
-    // To subtract points, we negate the second point and add
-    let negatedPoint2 = try point2.negation
-    return try addPoints(point1, negatedPoint2)
+    try BDHKE.subtract(point1, point2)
 }
 
 // MARK: - Mint Implementation
@@ -202,7 +232,7 @@ public struct Mint {
         let blindedMessagePublicKey = try P256K.KeyAgreement.PublicKey(dataRepresentation: blindedMessage, format: .compressed)
         
         // Sign: C_ = k * B_
-        let blindedSignature = try multiplyPoint(blindedMessagePublicKey, by: keypair.privateKey)
+        let blindedSignature = try BDHKE.multiply(point: blindedMessagePublicKey, scalar: keypair.privateKey)
         
         // Return C_ as compressed public key data
         return blindedSignature.dataRepresentation
@@ -216,8 +246,8 @@ public struct Mint {
         let signaturePublicKey = try P256K.KeyAgreement.PublicKey(dataRepresentation: signature, format: .compressed)
         
         // Compute k * hash_to_curve(x)
-        let secretPoint = try hashToCurve(secret)
-        let expectedSignature = try multiplyPoint(secretPoint, by: keypair.privateKey)
+        let secretPoint = try BDHKE.hashToCurve(secret)
+        let expectedSignature = try BDHKE.multiply(point: secretPoint, scalar: keypair.privateKey)
         
         // Compare the points using constant-time comparison to prevent timing attacks
         return SecureMemory.constantTimeCompare(
@@ -243,12 +273,12 @@ public struct WalletBlindingData: Sendable {
     public init(secret: String) throws {
         self.secret = secret
         self.blindingFactor = try P256K.KeyAgreement.PrivateKey()
-        self.secretPoint = try hashToCurve(secret)
-        
+        self.secretPoint = try BDHKE.hashToCurve(secret)
+
         // Create blinded message: B_ = Y + r*G
-        let generatorPoint = try getGeneratorPoint()
-        let rG = try multiplyPoint(generatorPoint, by: self.blindingFactor)
-        self.blindedMessage = try addPoints(self.secretPoint, rG)
+        let generatorPoint = try BDHKE.generatorPoint()
+        let rG = try BDHKE.multiply(point: generatorPoint, scalar: self.blindingFactor)
+        self.blindedMessage = try BDHKE.add(self.secretPoint, rG)
     }
 }
 
@@ -292,8 +322,8 @@ public struct Wallet {
         let blindedSigPublicKey = try P256K.KeyAgreement.PublicKey(dataRepresentation: blindedSignature, format: .compressed)
         
         // Unblind: C = C_ - r*K
-        let rK = try multiplyPoint(mintPublicKey, by: blindingData.blindingFactor)
-        let unblindedSignaturePoint = try subtractPoints(blindedSigPublicKey, rK)
+        let rK = try BDHKE.multiply(point: mintPublicKey, scalar: blindingData.blindingFactor)
+        let unblindedSignaturePoint = try BDHKE.subtract(blindedSigPublicKey, rK)
         
         // Convert to data for storage/transmission
         let signatureData = unblindedSignaturePoint.dataRepresentation

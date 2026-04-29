@@ -162,7 +162,7 @@ struct CryptographicTests {
             #expect(token.secret == secret)
             #expect(Wallet.validateTokenStructure(token))
 
-            let expectedPoint = try multiplyPoint(try hashToCurve(secret), by: mintPrivateKey)
+            let expectedPoint = try BDHKE.multiply(point: try BDHKE.hashToCurve(secret), scalar: mintPrivateKey)
             #expect(token.signature == expectedPoint.dataRepresentation, "Unblinded signature should match deterministic mint computation")
             #expect(try mint.verifyToken(secret: token.secret, signature: token.signature))
         }

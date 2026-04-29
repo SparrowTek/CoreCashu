@@ -21,6 +21,9 @@ let package = Package(
         .package(url: "https://github.com/krzyzanowskim/CryptoSwift.git", from: "1.10.0"),
         .package(url: "https://github.com/attaswift/BigInt.git", from: "5.7.0"),
         .package(url: "https://github.com/valpackett/SwiftCBOR.git", from: "0.6.0"),
+        // swift-crypto provides cross-platform P-256 ECDSA (ES256) for NUT-21 JWT verification.
+        // It is API-compatible with Apple's CryptoKit and works on Linux. Added in Phase 8.1.
+        .package(url: "https://github.com/apple/swift-crypto.git", from: "3.0.0"),
         // Apple-specific dependencies removed (bdk-swift, Vault)
         // These will be added in the CashuKit package
     ],
@@ -32,6 +35,7 @@ let package = Package(
                 .product(name: "CryptoSwift", package: "CryptoSwift"),
                 .product(name: "BigInt", package: "BigInt"),
                 .product(name: "SwiftCBOR", package: "SwiftCBOR"),
+                .product(name: "Crypto", package: "swift-crypto"),
                 // Platform-specific dependencies removed
             ],
             resources: [

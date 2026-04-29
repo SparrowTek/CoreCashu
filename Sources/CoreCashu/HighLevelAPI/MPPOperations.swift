@@ -22,6 +22,7 @@ public extension CashuWallet {
         guard isReady else {
             throw CashuError.walletNotInitialized
         }
+        try requireCapability(.mpp, operation: "Multi-path payment send")
 
         // Validate total amount
         // Note: balance access would need to be handled differently in real implementation
@@ -86,6 +87,7 @@ public extension CashuWallet {
         guard isReady else {
             throw CashuError.walletNotInitialized
         }
+        try requireCapability(.mpp, operation: "Multi-path payment combine")
 
         // Parse and validate all tokens
         var allProofs: [Proof] = []
@@ -142,6 +144,7 @@ public extension CashuWallet {
         guard isReady else {
             throw CashuError.walletNotInitialized
         }
+        try requireCapability(.mpp, operation: "Multi-path payment receive")
 
         var totalReceived = 0
         var receivedProofs: [Proof] = []
@@ -182,6 +185,7 @@ public extension CashuWallet {
         guard isReady else {
             throw CashuError.walletNotInitialized
         }
+        try requireCapability(.mpp, operation: "Check MPP status")
 
         // MPP payments in Cashu are atomic - either all paths succeed or all fail.
         // The payment state exists only during execution in the MultiPathPaymentExecutor.

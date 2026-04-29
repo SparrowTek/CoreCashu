@@ -99,7 +99,7 @@ public struct OptimizedCrypto: Sendable {
             return try P256K.KeyAgreement.PublicKey(dataRepresentation: cachedData, format: .compressed)
         }
 
-        let result = try hashToCurve(data)
+        let result = try BDHKE.hashToCurve(data)
         let resultData = result.dataRepresentation
         await hashToCurveCache.set(key, value: resultData)
 

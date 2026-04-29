@@ -166,13 +166,10 @@ struct NUT21Tests {
             "",
             "a.b.c.d"
         ]
-        
+
         for invalidToken in invalidTokens {
-            do {
+            #expect(throws: (any Error).self, "raw token: \(invalidToken)") {
                 _ = try ClearAuthToken(rawToken: invalidToken)
-                #expect(Bool(false)) // Should throw
-            } catch {
-                #expect(Bool(true)) // Expected to throw
             }
         }
     }
@@ -232,15 +229,6 @@ struct NUT21Tests {
         #expect(decoded.accessToken == response.accessToken)
         #expect(decoded.tokenType == response.tokenType)
         #expect(decoded.expiresIn == response.expiresIn)
-    }
-    
-    // MARK: - Device Code Response Tests
-    
-    @Test("Device code flow not implemented")
-    func testDeviceCodeFlowNotImplemented() {
-        // Device code flow types are not exposed in the current implementation
-        // This would be tested if DeviceCodeResponse was made public
-        #expect(Bool(true))
     }
     
     // MARK: - ClearAuthService Tests
@@ -332,13 +320,6 @@ struct NUT21Tests {
         } else {
             #expect(Bool(false)) // Should be able to parse URL components
         }
-    }
-    
-    @Test("ClearAuthService build authorization URL without config")
-    func testClearAuthServiceBuildAuthorizationURLWithoutConfig() async {
-        // This test is no longer applicable as the service requires a config parameter
-        // The method always requires a config to be passed in
-        #expect(Bool(true))
     }
     
     // MARK: - MintInfo NUT-21 Extensions Tests

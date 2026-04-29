@@ -21,8 +21,8 @@ import Foundation
 public struct RestoreSignatureService: Sendable {
     private let router: NetworkRouter<RestoreAPI>
     
-    public init() async {
-        self.router = NetworkRouter<RestoreAPI>(decoder: .cashuDecoder)
+    public init(networking: (any Networking)? = nil) async {
+        self.router = NetworkRouter<RestoreAPI>(networking: networking, decoder: .cashuDecoder)
         self.router.delegate = CashuEnvironment.current.routerDelegate
     }
     

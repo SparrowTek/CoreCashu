@@ -295,7 +295,7 @@ extension CashuWallet {
         }
         
         // Create restore service
-        let restoreService = await RestoreSignatureService()
+        let restoreService = await RestoreSignatureService(networking: networking)
         
         // Request restore from mint
         let request = PostRestoreRequest(outputs: blindedMessages)

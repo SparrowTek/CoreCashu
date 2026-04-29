@@ -117,12 +117,14 @@ struct KeychainSecureStoreTests {
         )
 
         let keychainConfiguration = configuration.keychainConfiguration
+        let isBiometry: Bool
         switch keychainConfiguration.accessControl {
         case .biometryCurrentSet?:
-            #expect(Bool(true))
+            isBiometry = true
         default:
-            #expect(Bool(false), "Expected biometryCurrentSet access control")
+            isBiometry = false
         }
+        #expect(isBiometry, "Expected biometryCurrentSet access control")
     }
 }
 #endif

@@ -129,16 +129,12 @@ struct MPPIntegrationTests {
         ]
         
         // This will fail with network errors, but we're testing the structure
-        do {
+        await #expect(throws: (any Error).self) {
             _ = try await executor.execute(
                 invoice: "lnbc...",
                 paymentPlans: [plan1, plan2],
                 wallets: wallets
             )
-            #expect(Bool(false), "Should have thrown an error")
-        } catch {
-            // Expected to fail
-            #expect(Bool(true))
         }
     }
 }

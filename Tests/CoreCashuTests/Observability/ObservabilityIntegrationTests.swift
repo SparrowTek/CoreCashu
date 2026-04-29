@@ -100,8 +100,18 @@ struct ObservabilityIntegrationTests {
             }
         }
 
-        // No crashes or data races = test passed
-        #expect(Bool(true))
+        // After 10 concurrent tasks, every per-tag counter for `task.started` and
+        // `task.completed` must read as 1. The earlier `#expect(true)` here only confirmed the
+        // loop ran without traps; this assertion catches a regression where parallel writes to
+        // the same metric key drop updates due to a missed lock.
+        var startedTotal: Double = 0
+        var completedTotal: Double = 0
+        for i in 1...10 {
+            startedTotal += await metricsClient.getCounter("task.started", tags: ["task_id": String(i)])
+            completedTotal += await metricsClient.getCounter("task.completed", tags: ["task_id": String(i)])
+        }
+        #expect(startedTotal == 10)
+        #expect(completedTotal == 10)
     }
 
     @Test("Export format compatibility")

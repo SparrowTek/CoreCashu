@@ -4,7 +4,7 @@ import Foundation
 @preconcurrency public actor EnhancedMetricsClient: MetricsClient {
 
     /// Metric types
-    public enum MetricType: Sendable {
+    public enum MetricType: Sendable, Equatable {
         case counter
         case gauge
         case histogram

@@ -61,4 +61,14 @@ public struct NetworkingPolicy: Sendable {
     public static let immediateRetrying = NetworkingPolicy(
         retryPolicy: HTTPRetryPolicy(baseDelay: 0, jitter: 0)
     )
+
+    /// Test-only policy that disables retry waits and pushes the rate limiter and circuit breaker
+    /// out of the way. The shared `CashuEnvironment.current.routerDelegate` is a process-wide
+    /// singleton, so when integration-test suites run concurrently they easily exhaust the
+    /// production rate-limit (60 req / 60 s) within the suite's first wallet's `initialize()`.
+    public static let testPermissive = NetworkingPolicy(
+        retryPolicy: HTTPRetryPolicy(baseDelay: 0, jitter: 0),
+        rateLimit: RateLimitConfiguration(maxRequests: 100_000, timeWindow: 60.0, burstCapacity: 100_000),
+        circuitBreaker: CircuitBreakerConfiguration(failureThreshold: Int.max, openTimeout: 0.001, halfOpenMaxAttempts: Int.max)
+    )
 }

@@ -203,18 +203,25 @@ struct TokenSerializationFuzzTests {
             #"{"amount": "100"}"#, // String instead of number
         ]
 
+        var attempts = 0
         for message in malformedMessages {
             let data = message.data(using: .utf8)!
 
-            // Try parsing as various response types
-            _ = try? JSONDecoder().decode(PostMintQuoteBolt11Response.self, from: data)
-            _ = try? JSONDecoder().decode(PostMeltQuoteBolt11Response.self, from: data)
-            _ = try? JSONDecoder().decode(PostSwapResponse.self, from: data)
-
-            // None should crash - all should handle gracefully
+            // Each malformed message must throw on every response type — we count attempts so a
+            // regression that *accidentally* parses a malformed payload (because a property was
+            // made optional, say) gets caught.
+            #expect(throws: (any Error).self, "PostMintQuoteBolt11Response: \(message)") {
+                _ = try JSONDecoder().decode(PostMintQuoteBolt11Response.self, from: data)
+            }
+            #expect(throws: (any Error).self, "PostMeltQuoteBolt11Response: \(message)") {
+                _ = try JSONDecoder().decode(PostMeltQuoteBolt11Response.self, from: data)
+            }
+            #expect(throws: (any Error).self, "PostSwapResponse: \(message)") {
+                _ = try JSONDecoder().decode(PostSwapResponse.self, from: data)
+            }
+            attempts += 3
         }
-
-        #expect(true, "Network message parsing handled all malformed inputs")
+        #expect(attempts == malformedMessages.count * 3)
     }
 
     // MARK: - Boundary Tests
@@ -258,10 +265,13 @@ struct TokenSerializationFuzzTests {
             }
             """
 
+            // The contract under test: the deserializer must never trap on adversarial input.
+            // It can either return a token (most boundary values won't survive validation) or
+            // throw — both are fine. The only failure mode is a crash, which here would fail
+            // the test by terminating the process. Wrap so the loop continues across cases.
             _ = try? CashuTokenUtils.deserializeToken("cashuA" + tokenString.data(using: .utf8)!.base64EncodedString())
         }
-
-        #expect(true, "Boundary value testing completed without crashes")
+        #expect(boundaries.count > 0)
     }
 
     // MARK: - Mutation Testing
@@ -298,17 +308,21 @@ struct TokenSerializationFuzzTests {
             { (s: String) -> String in s.replacingOccurrences(of: "/", with: "_") },
         ]
 
+        // We don't assert that *every* mutation must throw — `s + s` happens to remain a
+        // recognisable cashuA prefix, for example. What we assert is that we ran every mutation
+        // and at least one of them was rejected. That catches regressions where a parser
+        // becomes too lenient and starts accepting clearly-broken tokens like
+        // `cashuA<reversed>`.
+        var rejectionCount = 0
         for mutation in mutations {
             let mutated = mutation(validSerialized)
             do {
-                let _ = try CashuTokenUtils.deserializeToken(mutated)
-                // Some mutations might still produce valid tokens
+                _ = try CashuTokenUtils.deserializeToken(mutated)
             } catch {
-                // Expected for most mutations
+                rejectionCount += 1
             }
         }
-
-        #expect(true, "Mutation testing completed")
+        #expect(rejectionCount > 0, "At least one mutation must be rejected")
     }
 
     // MARK: - Performance Under Fuzz

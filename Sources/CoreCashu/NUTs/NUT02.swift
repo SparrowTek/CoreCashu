@@ -261,8 +261,8 @@ public struct FeeCalculator {
 public struct KeysetManagementService: Sendable {
     private let router: NetworkRouter<KeysetAPI>
     
-    public init() async {
-        self.router = NetworkRouter<KeysetAPI>(decoder: .cashuDecoder)
+    public init(networking: (any Networking)? = nil) async {
+        self.router = NetworkRouter<KeysetAPI>(networking: networking, decoder: .cashuDecoder)
         self.router.delegate = CashuEnvironment.current.routerDelegate
     }
     

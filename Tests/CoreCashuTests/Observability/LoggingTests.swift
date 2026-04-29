@@ -215,26 +215,23 @@ struct LoggingTests {
             useStderr: false
         )
 
-        // Since console logger outputs directly, we can't easily capture
-        // but we can verify it doesn't crash
+        // Lock in the constructor-arg → property mapping. The dispatch calls below merely
+        // exercise the formatter; they don't throw, so capturing them here would be a smoke
+        // test (which Phase 6.1 of opus47.md explicitly removed).
+        #expect(logger.minimumLevel == .debug)
         logger.debug("Debug message")
         logger.info("Info message", metadata: ["test": "value"])
         logger.warning("Warning message")
         logger.error("Error message")
         logger.critical("Critical message")
-
-        #expect(Bool(true)) // If we got here without crashing, test passes
     }
 
     @Test("StructuredConsoleLogger JSON output")
     func testStructuredConsoleLogger() {
         let logger = StructuredConsoleLogger(minimumLevel: .info)
-
-        // Test that it doesn't crash with various inputs
+        #expect(logger.minimumLevel == .info)
         logger.info("Test message", metadata: ["key": "value"])
         logger.error("Error message", metadata: ["error": "details", "code": 500])
-
-        #expect(Bool(true)) // If we got here without crashing, test passes
     }
 
     // MARK: - Log Level Tests

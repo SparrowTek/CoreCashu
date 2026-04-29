@@ -96,9 +96,17 @@ struct NUT18Tests {
             m: ["https://mint.example.com"],
             d: "Payment for coffee"
         )
-        
+
+        // `try` raises if validation fails, which the test framework treats as a recorded
+        // issue — that's the assertion. Round-trip through the encoded form to also lock in
+        // that a known-valid request encodes/decodes without losing fields.
         try request.validate()
-        #expect(Bool(true)) // Should not throw
+        let encoded = try PaymentRequestEncoder.encode(request)
+        let decoded = try PaymentRequestEncoder.decode(encoded)
+        #expect(decoded.i == request.i)
+        #expect(decoded.a == request.a)
+        #expect(decoded.u == request.u)
+        #expect(decoded.m == request.m)
     }
     
     // MARK: - Transport Tests

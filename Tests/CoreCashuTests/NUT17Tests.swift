@@ -236,17 +236,16 @@ struct NUT17Tests {
     
     @Test("WebSocket URL creation")
     func testWebSocketURLCreation() async throws {
-        // Test HTTPS to WSS conversion
+        // The wallet hands back a usable client instance for both http and https schemes.
+        // Calling `createWebSocketClient()` returns a non-throwing concrete type — the value
+        // existing is the contract under test, plus disconnect being idempotent.
         let httpsWallet = try await CashuWallet(mintURL: "https://mint.example.com")
-        let _ = try await httpsWallet.createWebSocketClient()
-        // Can't access private URL property, but creation should succeed
+        let httpsClient = try await httpsWallet.createWebSocketClient()
+        await httpsClient.disconnect()
 
-        // Test HTTP to WS conversion
         let httpWallet = try await CashuWallet(mintURL: "http://mint.example.com")
-        let _ = try await httpWallet.createWebSocketClient()
-        // Can't access private URL property, but creation should succeed
-        
-        #expect(Bool(true)) // If we reach here, clients were created successfully
+        let httpClient = try await httpWallet.createWebSocketClient()
+        await httpClient.disconnect()
     }
     
     @Test("JSON-RPC serialization")
@@ -348,11 +347,10 @@ struct NUT17Tests {
     func testWebSocketClientInitialization() async throws {
         let url = URL(string: "wss://mint.example.com/v1/ws")!
         let client = NUT17WebSocketClient(url: url)
-        
-        // Client should be created successfully
-        #expect(Bool(true))
-        
-        // Disconnect should work even without connection
+
+        // Disconnect on a never-connected client is a no-op; calling it twice must also be safe
+        // (idempotency contract). If either of these traps, the test fails by termination.
+        await client.disconnect()
         await client.disconnect()
     }
 }

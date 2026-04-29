@@ -115,8 +115,8 @@ public enum CurrencyUnit: String, CaseIterable, CashuCodabale {
 public struct KeyExchangeService: Sendable {
     private let router: NetworkRouter<KeyExchangeAPI>
     
-    public init() async {
-        self.router = NetworkRouter<KeyExchangeAPI>(decoder: .cashuDecoder)
+    public init(networking: (any Networking)? = nil) async {
+        self.router = NetworkRouter<KeyExchangeAPI>(networking: networking, decoder: .cashuDecoder)
         self.router.delegate = CashuEnvironment.current.routerDelegate
     }
     

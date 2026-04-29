@@ -295,9 +295,11 @@ public struct MintPreparation: Sendable {
 @CashuActor
 public struct MintService: Sendable {
     private let router: NetworkRouter<MintAPI>
-    
-    public init() async {
-        self.router = NetworkRouter<MintAPI>(decoder: .cashuDecoder)
+    private let networking: (any Networking)?
+
+    public init(networking: (any Networking)? = nil) async {
+        self.networking = networking
+        self.router = NetworkRouter<MintAPI>(networking: networking, decoder: .cashuDecoder)
         self.router.delegate = CashuEnvironment.current.routerDelegate
     }
     
@@ -391,8 +393,8 @@ public struct MintService: Sendable {
         at mintURL: String
     ) async throws -> MintPreparation {
         let outputAmounts = createOptimalDenominations(for: amount)
-        
-        let keyExchangeService = await KeyExchangeService()
+
+        let keyExchangeService = await KeyExchangeService(networking: networking)
         let activeKeysets = try await keyExchangeService.getActiveKeysets(from: mintURL)
         
         // Filter keysets by unit
@@ -456,7 +458,7 @@ public struct MintService: Sendable {
             throw CashuError.invalidResponse
         }
         
-        let keyExchangeService = await KeyExchangeService()
+        let keyExchangeService = await KeyExchangeService(networking: networking)
         let keyResponse = try await keyExchangeService.getKeys(from: mintURL)
         let mintKeys = Dictionary(uniqueKeysWithValues: keyResponse.keysets.flatMap { keyset in
             keyset.keys.compactMap { (amountStr, publicKeyHex) -> (String, P256K.KeyAgreement.PublicKey)? in
@@ -590,9 +592,9 @@ public struct MintService: Sendable {
     
     /// Check if method-unit pair is supported
     public func isMethodSupported(_ method: String, unit: String, at mintURL: String) async throws -> Bool {
-        let mintInfoService = await MintInfoService()
+        let mintInfoService = await MintInfoService(networking: networking)
         let mintInfo = try await mintInfoService.getMintInfo(from: mintURL)
-        
+
         return mintInfo.supportsMinting(method: method, unit: unit)
     }
 }

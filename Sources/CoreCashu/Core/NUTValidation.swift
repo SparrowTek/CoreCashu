@@ -72,12 +72,20 @@ public struct NUTValidation: Sendable {
         if trimmed.count > 2000 {
             errors.append("Invoice too long")
         }
-        
-        // Basic character validation (should be Bech32)
-        let validChars = CharacterSet(charactersIn: "qpzry9x8gf2tvdw0s3jn54khce6mua7l")
-        let invoiceChars = CharacterSet(charactersIn: trimmed.lowercased())
-        if !validChars.isSuperset(of: invoiceChars) {
-            errors.append("Invoice contains invalid characters")
+
+        // Basic character validation (should be Bech32 *after* the human-readable part). The HRP
+        // itself ends at the rightmost `1` ("the separator"); the data that follows must use the
+        // Bech32 alphabet. Validating the entire string against the alphabet is a bug — `b`, `i`,
+        // `o`, `1` are all excluded from the alphabet, but `b` shows up in every `lnbc...` prefix.
+        if let separatorIndex = trimmed.lowercased().lastIndex(of: "1"), separatorIndex < trimmed.endIndex {
+            let dataPart = trimmed.lowercased()[trimmed.index(after: separatorIndex)...]
+            if !dataPart.isEmpty {
+                let validChars = CharacterSet(charactersIn: "qpzry9x8gf2tvdw0s3jn54khce6mua7l")
+                let dataChars = CharacterSet(charactersIn: String(dataPart))
+                if !validChars.isSuperset(of: dataChars) {
+                    errors.append("Invoice contains invalid characters")
+                }
+            }
         }
         
         return ValidationResult(isValid: errors.isEmpty, errors: errors)

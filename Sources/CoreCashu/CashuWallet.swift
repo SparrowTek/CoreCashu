@@ -222,7 +222,8 @@ public actor CashuWallet {
     ) async {
         self.configuration = configuration
         self.proofManager = ProofManager(storage: proofStorage ?? InMemoryProofStorage())
-        self.mintInfoService = await MintInfoService()
+        let resolvedNetworking: any Networking = networking ?? URLSession.shared
+        self.mintInfoService = await MintInfoService(networking: resolvedNetworking)
         self.keysetCounterManager = KeysetCounterManager()
         
         #if canImport(Security) && !os(Linux)
@@ -240,8 +241,7 @@ public actor CashuWallet {
         self.secureStore = secureStore
         #endif
 
-        // Use provided networking or default to URLSession.shared
-        self.networking = networking ?? URLSession.shared
+        self.networking = resolvedNetworking
 
         // Use provided logger or default to console logger
         self.logger = logger ?? ConsoleLogger()
@@ -291,7 +291,8 @@ public actor CashuWallet {
     ) async throws {
         self.configuration = configuration
         self.proofManager = ProofManager(storage: proofStorage ?? InMemoryProofStorage())
-        self.mintInfoService = await MintInfoService()
+        let resolvedNetworking: any Networking = networking ?? URLSession.shared
+        self.mintInfoService = await MintInfoService(networking: resolvedNetworking)
         self.keysetCounterManager = KeysetCounterManager()
         
         #if canImport(Security) && !os(Linux)
@@ -306,8 +307,7 @@ public actor CashuWallet {
         self.secureStore = secureStore
         #endif
         
-        // Use provided networking or default to URLSession.shared
-        self.networking = networking ?? URLSession.shared
+        self.networking = resolvedNetworking
 
         // Use provided logger or default to console logger
         self.logger = logger ?? ConsoleLogger()
@@ -704,12 +704,12 @@ public actor CashuWallet {
     
     /// Setup wallet services
     private func setupServices() async {
-        let mint = await MintService()
-        let melt = await MeltService()
-        let swap = await SwapService()
-        let keyExchange = await KeyExchangeService()
-        let keysetManagement = await KeysetManagementService()
-        let checkState = await CheckStateService()
+        let mint = await MintService(networking: networking)
+        let melt = await MeltService(networking: networking)
+        let swap = await SwapService(networking: networking)
+        let keyExchange = await KeyExchangeService(networking: networking)
+        let keysetManagement = await KeysetManagementService(networking: networking)
+        let checkState = await CheckStateService(networking: networking)
         
         // Initialize NUT-22 access token service
         // Create a simple network service adapter

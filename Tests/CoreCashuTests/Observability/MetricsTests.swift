@@ -253,38 +253,39 @@ struct MetricsTests {
 
     // MARK: - Original Metrics Client Tests
 
-    @Test("NoOp metrics client does nothing")
+    @Test("NoOp metrics client preserves the contract under repeated calls")
     func testNoOpMetricsClient() async {
         let client = NoOpMetricsClient()
-
         await client.increment("test")
         await client.gauge("test", value: 100)
         await client.timing("test", duration: 50)
 
+        // The contract: every method is a no-op (i.e. doesn't throw, returns sane values, and
+        // `elapsedTime` reflects wall-clock progression).
         let timer = client.startTimer()
+        try? await Task.sleep(nanoseconds: 5_000_000)
+        let elapsed = timer.elapsedTime
+        #expect(elapsed > 0, "elapsedTime must reflect wall-clock progress")
         await timer.stop(metricName: "timer", tags: [:])
-
         await client.event("event")
-
-        #expect(Bool(true)) // NoOpMetricsClient does nothing
     }
 
-    @Test("Console metrics client outputs to console")
+    @Test("Console metrics client formats metric names without emitting an exception")
     func testConsoleMetricsClient() async {
         let client = ConsoleMetricsClient()
-
-        // These should output to console without crashing
         await client.increment("console.test")
         await client.gauge("console.gauge", value: 100)
         await client.timing("console.histogram", duration: 0.05)
 
         let timer = client.startTimer()
         try? await Task.sleep(nanoseconds: 10_000_000)
+        let elapsedBefore = timer.elapsedTime
         await timer.stop(metricName: "console.timer", tags: [:])
-
+        let elapsedAfter = timer.elapsedTime
+        // `elapsedTime` keeps ticking after `stop()` — it's a wall-clock query, not a stopwatch.
+        // We just want to lock in that stop() doesn't *reset* the underlying time anchor.
+        #expect(elapsedBefore <= elapsedAfter)
         await client.event("console.event", metadata: ["test": "value"])
-
-        #expect(Bool(true)) // ConsoleMetricsClient always outputs
     }
 
     // MARK: - CashuMetrics Constants Tests

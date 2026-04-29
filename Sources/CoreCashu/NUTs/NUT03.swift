@@ -180,11 +180,11 @@ public struct SwapService: Sendable {
     private let keyExchangeService: KeyExchangeService
     private let keysetManagementService: KeysetManagementService
     
-    public init() async {
-        self.router = NetworkRouter<SwapAPI>(decoder: .cashuDecoder)
+    public init(networking: (any Networking)? = nil) async {
+        self.router = NetworkRouter<SwapAPI>(networking: networking, decoder: .cashuDecoder)
         self.router.delegate = CashuEnvironment.current.routerDelegate
-        self.keyExchangeService = await KeyExchangeService()
-        self.keysetManagementService = await KeysetManagementService()
+        self.keyExchangeService = await KeyExchangeService(networking: networking)
+        self.keysetManagementService = await KeysetManagementService(networking: networking)
     }
     
     /// Execute a swap operation

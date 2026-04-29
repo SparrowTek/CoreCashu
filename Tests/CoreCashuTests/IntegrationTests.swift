@@ -462,27 +462,25 @@ struct IntegrationTests {
     
     @Test
     func testMemoryUsage() async throws {
-        // Create and release many tokens to test memory usage
-        for _ in 0..<100 {
+        // Each iteration constructs a token, serializes it, and deserializes it. Assert
+        // round-trip equality so the loop body isn't silently inert.
+        for iteration in 0..<100 {
             let proof = Proof(
                 amount: 1000,
                 id: "0123456789abcdef",
                 secret: "memory-test-secret",
                 C: "deadbeef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
             )
-            
             let token = CashuToken(
                 token: [TokenEntry(mint: Self.testMintURL, proofs: [proof])],
                 unit: Self.testUnit,
                 memo: "Memory test"
             )
             let serialized = try CashuTokenUtils.serializeToken(token)
-            _ = try CashuTokenUtils.deserializeToken(serialized)
-            
-            // Token should be released after this iteration
+            let deserialized = try CashuTokenUtils.deserializeToken(serialized)
+            #expect(deserialized.token.count == 1, "iteration \(iteration)")
+            #expect(deserialized.token[0].proofs.first?.amount == 1000)
+            #expect(deserialized.unit == Self.testUnit)
         }
-        
-        // Test should complete without memory issues
-        #expect(Bool(true))
     }
 }

@@ -549,17 +549,21 @@ struct NUT19Tests {
     
     // MARK: - Mock Network Service Tests
     
-    @Test("MockNetworkService basic functionality")
+    @Test("MockNetworkService returns canned responses for matching routes")
     func testMockNetworkService() async throws {
         let responses = [
             "POST /v1/mint/bolt11": Data("{\"signatures\":[]}".utf8)
         ]
-        
-        let _ = MockNetworkService(responses: responses)
-        
-        // This would need a proper CashuDecodable type for testing
-        // For now, we'll just test that the service can be created
-        #expect(Bool(true)) // Service created successfully
+        let service = MockNetworkService(responses: responses)
+
+        // Matching route decodes into the expected type.
+        let response: MintResponse = try await service.execute(method: "POST", path: "/v1/mint/bolt11", payload: nil)
+        #expect(response.signatures.isEmpty)
+
+        // Non-matching route surfaces the network error path.
+        await #expect(throws: CashuError.self) {
+            let _: MintResponse = try await service.execute(method: "GET", path: "/v1/missing", payload: nil)
+        }
     }
     
     // MARK: - Integration Tests

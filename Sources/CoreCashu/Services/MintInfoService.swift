@@ -16,8 +16,8 @@ import Foundation
 public struct MintInfoService: Sendable {
     private let router: NetworkRouter<MintInfoAPI>
     
-    public init() async {
-        self.router = NetworkRouter<MintInfoAPI>(decoder: .cashuDecoder)
+    public init(networking: (any Networking)? = nil) async {
+        self.router = NetworkRouter<MintInfoAPI>(networking: networking, decoder: .cashuDecoder)
         self.router.delegate = CashuEnvironment.current.routerDelegate
     }
     

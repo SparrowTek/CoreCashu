@@ -13,9 +13,11 @@ import Foundation
 @CashuActor
 public struct CheckStateService: Sendable {
     private let router: NetworkRouter<CheckStateAPI>
-    
-    public init() async {
-        self.router = NetworkRouter<CheckStateAPI>(decoder: .cashuDecoder)
+    private let networking: (any Networking)?
+
+    public init(networking: (any Networking)? = nil) async {
+        self.networking = networking
+        self.router = NetworkRouter<CheckStateAPI>(networking: networking, decoder: .cashuDecoder)
         self.router.delegate = CashuEnvironment.current.routerDelegate
     }
     
@@ -62,7 +64,7 @@ public struct CheckStateService: Sendable {
     /// - Parameter mintURL: The mint URL to check
     /// - Returns: True if NUT-07 is supported
     public func supportsStateCheck(at mintURL: String) async throws -> Bool {
-        let mintInfoService = await MintInfoService()
+        let mintInfoService = await MintInfoService(networking: networking)
         return try await mintInfoService.supportsTokenStateCheck(at: mintURL)
     }
     

@@ -339,7 +339,7 @@ extension CashuWallet {
         unit: String
     ) async throws -> PostMeltQuoteResponse {
         // Create a new MeltService instance for this operation
-        let meltService = await MeltService()
+        let meltService = await MeltService(networking: networking)
         
         return try await meltService.requestMeltQuoteWithMPP(
             request: invoice,

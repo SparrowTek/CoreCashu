@@ -351,11 +351,11 @@ public struct MeltService: Sendable {
     private let keyExchangeService: KeyExchangeService
     private let keysetManagementService: KeysetManagementService
     
-    public init() async {
-        self.router = NetworkRouter<MeltAPI>(decoder: .cashuDecoder)
+    public init(networking: (any Networking)? = nil) async {
+        self.router = NetworkRouter<MeltAPI>(networking: networking, decoder: .cashuDecoder)
         self.router.delegate = CashuEnvironment.current.routerDelegate
-        self.keyExchangeService = await KeyExchangeService()
-        self.keysetManagementService = await KeysetManagementService()
+        self.keyExchangeService = await KeyExchangeService(networking: networking)
+        self.keysetManagementService = await KeysetManagementService(networking: networking)
     }
     
     /// Request a melt quote for a payment request

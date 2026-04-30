@@ -19,9 +19,7 @@ public actor InMemorySecureStore: SecureStore {
     // MARK: - Mnemonic Operations
 
     public func saveMnemonic(_ mnemonic: SensitiveString) async throws {
-        mnemonic.withString { plaintext in
-            storage[mnemonicKey] = plaintext
-        }
+        storage[mnemonicKey] = await mnemonic.withString { $0 }
     }
 
     public func loadMnemonic() async throws -> SensitiveString? {

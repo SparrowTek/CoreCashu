@@ -147,58 +147,48 @@ extension SecureMemory {
     }
 }
 
-/// A wrapper for sensitive data that automatically wipes on deinitialization
-public final class SensitiveData: @unchecked Sendable {
+/// A wrapper for sensitive data that automatically wipes on deinitialization.
+///
+/// Backed by an actor — concurrent access is serialized through actor isolation rather than a
+/// manual lock. ARC guarantees `deinit` runs only when no caller holds the actor, so the wipe
+/// cannot race with `withData`/`count`.
+public actor SensitiveData {
     private var data: Data
-    private let lock = NSLock()
-    
+
     public init(_ data: Data) {
         self.data = data
     }
-    
-    public var count: Int {
-        lock.lock()
-        defer { lock.unlock() }
-        return data.count
+
+    public var count: Int { data.count }
+
+    public func withData<T: Sendable>(_ block: sending (Data) throws -> T) rethrows -> T {
+        try block(data)
     }
-    
-    public func withData<T>(_ block: (Data) throws -> T) rethrows -> T {
-        lock.lock()
-        defer { lock.unlock() }
-        return try block(data)
-    }
-    
+
     deinit {
-        lock.lock()
-        defer { lock.unlock() }
         SecureMemory.wipe(&data)
     }
 }
 
-/// A wrapper for sensitive strings that automatically wipes on deinitialization
-public final class SensitiveString: @unchecked Sendable {
+/// A wrapper for sensitive strings that automatically wipes on deinitialization.
+///
+/// Backed by an actor — concurrent access is serialized through actor isolation rather than a
+/// manual lock. ARC guarantees `deinit` runs only when no caller holds the actor, so the wipe
+/// cannot race with `withString`/`isEmpty`.
+public actor SensitiveString {
     private var string: String
-    private let lock = NSLock()
-    
+
     public init(_ string: String) {
         self.string = string
     }
-    
-    public var isEmpty: Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        return string.isEmpty
+
+    public var isEmpty: Bool { string.isEmpty }
+
+    public func withString<T: Sendable>(_ block: sending (String) throws -> T) rethrows -> T {
+        try block(string)
     }
-    
-    public func withString<T>(_ block: (String) throws -> T) rethrows -> T {
-        lock.lock()
-        defer { lock.unlock() }
-        return try block(string)
-    }
-    
+
     deinit {
-        lock.lock()
-        defer { lock.unlock() }
         SecureMemory.wipe(&string)
     }
 }

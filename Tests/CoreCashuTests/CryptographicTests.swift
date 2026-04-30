@@ -567,28 +567,22 @@ struct CryptographicTests {
     @Test
     func sensitiveDataWrapperProtectsData() async throws {
         let sensitive = SensitiveData(Data([0x01, 0x02, 0x03]))
-        
-        #expect(sensitive.count == 3)
-        
-        var accessedData: Data?
-        sensitive.withData { data in
-            accessedData = data
-        }
-        
+
+        let count = await sensitive.count
+        #expect(count == 3)
+
+        let accessedData: Data = await sensitive.withData { $0 }
         #expect(accessedData == Data([0x01, 0x02, 0x03]))
     }
-    
+
     @Test
     func sensitiveStringWrapperProtectsString() async throws {
         let sensitive = SensitiveString("secret phrase")
-        
-        #expect(sensitive.isEmpty == false)
-        
-        var accessedString: String?
-        sensitive.withString { str in
-            accessedString = str
-        }
-        
+
+        let isEmpty = await sensitive.isEmpty
+        #expect(isEmpty == false)
+
+        let accessedString: String = await sensitive.withString { String($0) }
         #expect(accessedString == "secret phrase")
     }
     

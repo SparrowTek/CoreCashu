@@ -28,25 +28,20 @@ public struct DeterministicSecretDerivation: Sendable {
         self.masterKey = masterKey
     }
     
-    public init(mnemonic: String, passphrase: String = "") throws {
-        // Wrap immediately so the seed-derivation chain operates on a buffer that wipes on
-        // deinit. Phase 8.10 (2026-04-29).
+    public init(mnemonic: String, passphrase: String = "") async throws {
         let sensitive = SensitiveString(mnemonic)
-        try self.init(mnemonic: sensitive, passphrase: passphrase)
+        try await self.init(mnemonic: sensitive, passphrase: passphrase)
     }
 
-    /// `SensitiveString`-typed initializer (Phase 8.10). Prefer this overload — the wrapped
-    /// mnemonic is wiped from memory on deinit, and the `withString` block scopes plaintext
-    /// access to the seed-derivation step.
-    public init(mnemonic: SensitiveString, passphrase: String = "") throws {
-        let isValid = mnemonic.withString { BIP39.validateMnemonic($0) }
+    /// `SensitiveString`-typed initializer. The wrapped mnemonic is wiped from memory on deinit,
+    /// and the `withString` block scopes plaintext access to the seed-derivation step.
+    public init(mnemonic: SensitiveString, passphrase: String = "") async throws {
+        let isValid = await mnemonic.withString { BIP39.validateMnemonic($0) }
         guard isValid else {
             throw CashuError.invalidMnemonic
         }
 
-        // Materialize the seed under the lock and let the SensitiveString deinit wipe the buffer
-        // on scope exit.
-        let seed = mnemonic.withString { plaintext in
+        let seed = await mnemonic.withString { plaintext in
             createSeedFromMnemonic(mnemonic: plaintext, passphrase: passphrase)
         }
         self.masterKey = createMasterKeyFromSeed(seed: seed)

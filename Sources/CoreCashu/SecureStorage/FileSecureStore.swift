@@ -157,9 +157,8 @@ public actor FileSecureStore: SecureStore {
     // MARK: - SecureStore
 
     public func saveMnemonic(_ mnemonic: SensitiveString) async throws {
-        try mnemonic.withString { plaintext in
-            try saveString(plaintext, kind: .mnemonic)
-        }
+        let plaintext = await mnemonic.withString { $0 }
+        try saveString(plaintext, kind: .mnemonic)
     }
 
     public func loadMnemonic() async throws -> SensitiveString? {

@@ -74,7 +74,7 @@ struct NUT13Tests {
     func testSecretDerivation() async throws {
         // Test vector mnemonic
         let testMnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
-        let derivation = try DeterministicSecretDerivation(mnemonic: testMnemonic)
+        let derivation = try await DeterministicSecretDerivation(mnemonic: testMnemonic)
         
         let keysetID = "009a1f293253e41e"
         let counter: UInt32 = 0
@@ -122,7 +122,7 @@ struct NUT13Tests {
     @Test("Wallet restoration batch generation")
     func testRestorationBatchGeneration() async throws {
         let testMnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
-        let derivation = try DeterministicSecretDerivation(mnemonic: testMnemonic)
+        let derivation = try await DeterministicSecretDerivation(mnemonic: testMnemonic)
         let counterManager = KeysetCounterManager()
         
         let restoration = WalletRestoration(
@@ -210,7 +210,7 @@ struct NUT13Tests {
     @Test("Proof restoration from blinded signatures")
     func testProofRestoration() async throws {
         let testMnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
-        let derivation = try DeterministicSecretDerivation(mnemonic: testMnemonic)
+        let derivation = try await DeterministicSecretDerivation(mnemonic: testMnemonic)
         let counterManager = KeysetCounterManager()
         
         let restoration = WalletRestoration(
@@ -278,11 +278,11 @@ struct NUT13Tests {
     }
     
     @Test("Test vector: Secret derivation")
-    func testVectorSecretDerivation() throws {
+    func testVectorSecretDerivation() async throws {
         // Test vector from NUT-13 specification
         // https://github.com/cashubtc/nuts/blob/main/tests/13-tests.md
         let mnemonic = "half depart obvious quality work element tank gorilla view sugar picture humble"
-        let derivation = try DeterministicSecretDerivation(mnemonic: mnemonic)
+        let derivation = try await DeterministicSecretDerivation(mnemonic: mnemonic)
         let keysetID = "009a1f293253e41e"
         
         // Expected secrets for counters 0-4 (from official NUT-13 test vectors)
@@ -307,11 +307,11 @@ struct NUT13Tests {
     }
     
     @Test("Test vector: Blinding factor derivation")
-    func testVectorBlindingFactorDerivation() throws {
+    func testVectorBlindingFactorDerivation() async throws {
         // Test vector from NUT-13 specification
         // https://github.com/cashubtc/nuts/blob/main/tests/13-tests.md
         let mnemonic = "half depart obvious quality work element tank gorilla view sugar picture humble"
-        let derivation = try DeterministicSecretDerivation(mnemonic: mnemonic)
+        let derivation = try await DeterministicSecretDerivation(mnemonic: mnemonic)
         let keysetID = "009a1f293253e41e"
         
         // Expected blinding factors (r values) for counters 0-4 (from official NUT-13 test vectors)
@@ -336,11 +336,11 @@ struct NUT13Tests {
     }
     
     @Test("Test vector: Derivation paths")
-    func testVectorDerivationPaths() throws {
+    func testVectorDerivationPaths() async throws {
         // Test vector from NUT-13 specification
         // https://github.com/cashubtc/nuts/blob/main/tests/13-tests.md
         let mnemonic = "half depart obvious quality work element tank gorilla view sugar picture humble"
-        let derivation = try DeterministicSecretDerivation(mnemonic: mnemonic)
+        let derivation = try await DeterministicSecretDerivation(mnemonic: mnemonic)
         let keysetID = "009a1f293253e41e"
         
         // The expected derivation paths are:
@@ -370,14 +370,14 @@ struct NUT13Tests {
     // MARK: - BIP32 Compliance Tests
     
     @Test("BIP32 master key derivation from seed")
-    func testBIP32MasterKeyDerivation() throws {
+    func testBIP32MasterKeyDerivation() async throws {
         // The BIP32 spec says master key is created using HMAC-SHA512 with key "Bitcoin seed"
         // and the seed as data. The left 32 bytes are the private key, right 32 bytes are chain code.
         let mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
         
         // Verify derivation produces consistent results
-        let derivation1 = try DeterministicSecretDerivation(mnemonic: mnemonic)
-        let derivation2 = try DeterministicSecretDerivation(mnemonic: mnemonic)
+        let derivation1 = try await DeterministicSecretDerivation(mnemonic: mnemonic)
+        let derivation2 = try await DeterministicSecretDerivation(mnemonic: mnemonic)
         
         let secret1 = try derivation1.deriveSecret(keysetID: "009a1f293253e41e", counter: 0)
         let secret2 = try derivation2.deriveSecret(keysetID: "009a1f293253e41e", counter: 0)
@@ -386,11 +386,11 @@ struct NUT13Tests {
     }
     
     @Test("BIP32 hardened child key derivation")
-    func testBIP32HardenedDerivation() throws {
+    func testBIP32HardenedDerivation() async throws {
         // All path components in NUT-13 except the last one are hardened (index >= 0x80000000)
         // This test verifies hardened derivation works correctly
         let mnemonic = "half depart obvious quality work element tank gorilla view sugar picture humble"
-        let derivation = try DeterministicSecretDerivation(mnemonic: mnemonic)
+        let derivation = try await DeterministicSecretDerivation(mnemonic: mnemonic)
         
         // Test with multiple counters to verify hardened derivation
         var secrets: [String] = []
@@ -404,22 +404,22 @@ struct NUT13Tests {
     }
     
     @Test("BIP39 seed generation with passphrase")
-    func testBIP39SeedWithPassphrase() throws {
+    func testBIP39SeedWithPassphrase() async throws {
         let mnemonic = "half depart obvious quality work element tank gorilla view sugar picture humble"
         
         // Without passphrase
-        let derivation1 = try DeterministicSecretDerivation(mnemonic: mnemonic, passphrase: "")
+        let derivation1 = try await DeterministicSecretDerivation(mnemonic: mnemonic, passphrase: "")
         let secret1 = try derivation1.deriveSecret(keysetID: "009a1f293253e41e", counter: 0)
         
         // With passphrase
-        let derivation2 = try DeterministicSecretDerivation(mnemonic: mnemonic, passphrase: "my secret passphrase")
+        let derivation2 = try await DeterministicSecretDerivation(mnemonic: mnemonic, passphrase: "my secret passphrase")
         let secret2 = try derivation2.deriveSecret(keysetID: "009a1f293253e41e", counter: 0)
         
         // Same mnemonic with different passphrases should produce different secrets
         #expect(secret1 != secret2, "Different passphrases should produce different secrets")
         
         // Same mnemonic + passphrase should be deterministic
-        let derivation3 = try DeterministicSecretDerivation(mnemonic: mnemonic, passphrase: "my secret passphrase")
+        let derivation3 = try await DeterministicSecretDerivation(mnemonic: mnemonic, passphrase: "my secret passphrase")
         let secret3 = try derivation3.deriveSecret(keysetID: "009a1f293253e41e", counter: 0)
         #expect(secret2 == secret3, "Same mnemonic + passphrase should produce same secret")
     }
@@ -457,9 +457,9 @@ struct NUT13Tests {
     }
     
     @Test("Large counter values")
-    func testLargeCounterValues() throws {
+    func testLargeCounterValues() async throws {
         let mnemonic = "half depart obvious quality work element tank gorilla view sugar picture humble"
-        let derivation = try DeterministicSecretDerivation(mnemonic: mnemonic)
+        let derivation = try await DeterministicSecretDerivation(mnemonic: mnemonic)
         let keysetID = "009a1f293253e41e"
         
         // Test with large counter values

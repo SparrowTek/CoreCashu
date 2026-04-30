@@ -44,9 +44,8 @@ private actor InMemoryKeychainSecureStore: SecureStore {
     private var storage: [StorageKey: Data] = [:]
 
     func saveMnemonic(_ mnemonic: SensitiveString) async throws {
-        try mnemonic.withString { plaintext in
-            try saveString(plaintext, kind: .mnemonic)
-        }
+        let plaintext = await mnemonic.withString { $0 }
+        try saveString(plaintext, kind: .mnemonic)
     }
 
     func loadMnemonic() async throws -> SensitiveString? {

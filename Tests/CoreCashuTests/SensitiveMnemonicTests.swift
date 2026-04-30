@@ -15,9 +15,9 @@ struct SensitiveMnemonicTests {
     private static let knownGoodMnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
 
     @Test("SensitiveString initializer derives the same master key as the String initializer")
-    func sensitiveAndStringInitializersAgree() throws {
-        let plain = try DeterministicSecretDerivation(mnemonic: Self.knownGoodMnemonic)
-        let wrapped = try DeterministicSecretDerivation(
+    func sensitiveAndStringInitializersAgree() async throws {
+        let plain = try await DeterministicSecretDerivation(mnemonic: Self.knownGoodMnemonic)
+        let wrapped = try await DeterministicSecretDerivation(
             mnemonic: SensitiveString(Self.knownGoodMnemonic)
         )
 
@@ -28,32 +28,31 @@ struct SensitiveMnemonicTests {
     }
 
     @Test("SensitiveString-typed initializer rejects an invalid mnemonic")
-    func sensitiveInitializerValidates() throws {
+    func sensitiveInitializerValidates() async throws {
         let bogus = SensitiveString("not a valid mnemonic phrase at all")
-        #expect(throws: CashuError.self) {
-            _ = try DeterministicSecretDerivation(mnemonic: bogus)
+        await #expect(throws: CashuError.self) {
+            _ = try await DeterministicSecretDerivation(mnemonic: bogus)
         }
     }
 
     @Test("withString scopes plaintext access to the closure body")
-    func withStringScopesPlaintextAccess() {
+    func withStringScopesPlaintextAccess() async {
         let sensitive = SensitiveString("hunter2 hunter2 hunter2 hunter2")
-        var captured = ""
-        sensitive.withString { plaintext in
-            captured = String(plaintext)
-        }
+        let captured = await sensitive.withString { String($0) }
         // After the scope returns the SensitiveString still holds its buffer; what we copied out
         // is a fresh String the test owns. Confirm the contents survived the scope but the
         // caller is free to wipe their copy when done.
         #expect(captured == "hunter2 hunter2 hunter2 hunter2")
     }
 
-    @Test("isEmpty reports correctly under lock")
-    func isEmptyReportsCorrectly() {
+    @Test("isEmpty reports correctly through actor isolation")
+    func isEmptyReportsCorrectly() async {
         let nonEmpty = SensitiveString(Self.knownGoodMnemonic)
         let empty = SensitiveString("")
-        #expect(!nonEmpty.isEmpty)
-        #expect(empty.isEmpty)
+        let nonEmptyResult = await nonEmpty.isEmpty
+        let emptyResult = await empty.isEmpty
+        #expect(!nonEmptyResult)
+        #expect(emptyResult)
     }
 
     @Test("SecureStore round-trips a SensitiveString mnemonic without lifting plaintext to a String")
@@ -65,7 +64,12 @@ struct SensitiveMnemonicTests {
         let loaded = try await store.loadMnemonic()
         #expect(loaded != nil)
 
-        let matches = loaded?.withString { $0 == Self.knownGoodMnemonic } ?? false
+        let matches: Bool
+        if let loaded {
+            matches = await loaded.withString { $0 == Self.knownGoodMnemonic }
+        } else {
+            matches = false
+        }
         #expect(matches, "wrapped mnemonic should round-trip equal to the original under withString")
     }
 

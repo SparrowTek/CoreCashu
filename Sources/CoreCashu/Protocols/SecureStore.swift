@@ -123,10 +123,10 @@ public extension SecureStore {
     /// paths that haven't migrated to `SensitiveString` yet.
     ///
     /// **Prefer `loadMnemonic() async throws -> SensitiveString?`** in new code — the
-    /// `SensitiveString` form keeps the plaintext under the wrapper's lock and wipes on deinit.
+    /// `SensitiveString` form keeps the plaintext under actor isolation and wipes on deinit.
     func loadMnemonicString() async throws -> String? {
         guard let sensitive = try await loadMnemonic() else { return nil }
-        return sensitive.withString { plaintext in String(plaintext) }
+        return await sensitive.withString { String($0) }
     }
 }
 

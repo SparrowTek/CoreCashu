@@ -325,13 +325,13 @@ public actor CashuWallet {
 
         // Validate mnemonic BEFORE storing (security: prevents persisting invalid data).
         // The validation lifts the plaintext only inside `withString`'s scope.
-        let isValid = mnemonic.withString { BIP39.validateMnemonic($0) }
+        let isValid = await mnemonic.withString { BIP39.validateMnemonic($0) }
         guard isValid else {
             throw CashuError.invalidMnemonic
         }
 
         // Initialize deterministic derivation (validation passed).
-        self.deterministicDerivation = try DeterministicSecretDerivation(
+        self.deterministicDerivation = try await DeterministicSecretDerivation(
             mnemonic: mnemonic,
             passphrase: passphrase
         )

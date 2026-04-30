@@ -39,8 +39,8 @@ public extension CashuWallet {
 
     /// Validate a mnemonic phrase wrapped in ``SensitiveString``. The plaintext is only
     /// materialized inside the validator's `withString` scope.
-    static func validateMnemonic(_ mnemonic: SensitiveString) -> Bool {
-        mnemonic.withString { BIP39.validateMnemonic($0) }
+    static func validateMnemonic(_ mnemonic: SensitiveString) async -> Bool {
+        await mnemonic.withString { BIP39.validateMnemonic($0) }
     }
 
     /// Initialize wallet from secure store (restore existing wallet).

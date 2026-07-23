@@ -299,4 +299,9 @@ public actor KeychainSecureStore: SecureStore {
     }
 }
 
+/// Unambiguous alias for consumers whose own module declares a `KeychainSecureStore`:
+/// the `CoreCashu` namespace struct shadows the module name, so the usual
+/// `CoreCashu.KeychainSecureStore` qualification cannot resolve this type from outside.
+public typealias CoreCashuKeychainSecureStore = KeychainSecureStore
+
 #endif

@@ -62,6 +62,10 @@ public actor RobustWebSocketClient: WebSocketClientProtocol {
     private var connectionState: ConnectionState = .disconnected
     private var currentURL: URL?
     private var reconnectionTask: Task<Void, Never>?
+    /// Identity of the current reconnection task. A finishing task may only clear
+    /// `reconnectionTask` when the generation still matches — otherwise a superseded
+    /// task would wipe the live task's handle, orphaning it beyond cancellation.
+    private var reconnectionGeneration = 0
     private var heartbeatTask: Task<Void, Never>?
     private var messageSendingTask: Task<Void, Never>?
     private var receiveHandlers: [(WebSocketMessage) async -> Void] = []
@@ -99,6 +103,19 @@ public actor RobustWebSocketClient: WebSocketClientProtocol {
     public func connect(to url: URL) async throws {
         guard url.scheme == "ws" || url.scheme == "wss" else {
             throw WebSocketError.invalidURL
+        }
+
+        // Overlapping connects would hit the underlying client concurrently and let its
+        // state diverge from ours. An in-flight connect is rejected; connecting while
+        // (apparently) connected is treated as an explicit reconnect — our state may be
+        // stale if the wire dropped without notice.
+        switch connectionState {
+        case .connecting:
+            throw WebSocketError.connectionFailed("connect(to:) called while a connect is already in flight")
+        case .connected:
+            await underlyingClient.disconnect()
+        default:
+            break
         }
 
         // Cancel any ongoing reconnection
@@ -199,11 +216,16 @@ public actor RobustWebSocketClient: WebSocketClientProtocol {
         heartbeatTask?.cancel()
         messageSendingTask?.cancel()
 
+        // The wrapper must settle into .disconnected even when the underlying close
+        // throws — a permanently .disconnecting client can never reconnect.
+        defer {
+            connectionState = .disconnected
+            currentURL = nil
+            stateChangeHandlers.continuation.yield(.disconnected)
+        }
+
         // Close underlying connection
         try await underlyingClient.close(code: code, reason: reason)
-
-        connectionState = .disconnected
-        currentURL = nil
 
         // Clear message queue if not queuing while disconnected
         if !configuration.queueWhileDisconnected {
@@ -224,6 +246,7 @@ public actor RobustWebSocketClient: WebSocketClientProtocol {
 
         connectionState = .disconnected
         currentURL = nil
+        stateChangeHandlers.continuation.yield(.disconnected)
 
         // Clear queue if configured
         if !configuration.queueWhileDisconnected {
@@ -300,60 +323,89 @@ public actor RobustWebSocketClient: WebSocketClientProtocol {
     }
 
     private func startReconnection() {
+        // A live (non-cancelled) task keeps ownership; a cancelled task is winding down
+        // and can no longer touch our handle thanks to the generation check below.
         guard reconnectionTask == nil || reconnectionTask?.isCancelled == true else {
             return // Already reconnecting
         }
 
         connectionState = .reconnecting(attempt: 0)
 
-        reconnectionTask = Task {
+        reconnectionGeneration += 1
+        let generation = reconnectionGeneration
+
+        // The loop captures self weakly and takes a strong reference only inside actor
+        // calls — never across a sleep — so dropping the last external reference actually
+        // deallocates the client (running deinit's cancels) instead of leaking a forever-
+        // reconnecting actor.
+        reconnectionTask = Task { [weak self] in
             var attempt = 0
 
             while !Task.isCancelled {
                 attempt += 1
-                connectionState = .reconnecting(attempt: attempt)
-                stateChangeHandlers.continuation.yield(.reconnecting(attempt: attempt))
 
-                // Calculate delay
-                guard let delay = await configuration.reconnectionStrategy.delay(for: attempt, lastError: nil) else {
-                    // No more retries
-                    connectionState = .disconnected
-                    stateChangeHandlers.continuation.yield(.disconnected)
-                    break
+                let delayNanoseconds: UInt64?
+                if let self {
+                    delayNanoseconds = await self.beginReconnectionAttempt(attempt)
+                } else {
+                    return
                 }
 
-                // Wait before reconnecting
-                try? await Task.sleep(nanoseconds: TimeConversion.secondsToNanoseconds(delay))
+                guard let delayNanoseconds else { break } // strategy says stop
 
+                try? await Task.sleep(nanoseconds: delayNanoseconds)
                 guard !Task.isCancelled else { break }
 
-                // Attempt reconnection
-                if let url = currentURL {
-                    do {
-                        try await withTimeout(seconds: configuration.connectionTimeout) { [weak self] in
-                            guard let self = self else { throw WebSocketError.connectionFailed("Client deallocated") }
-                            try await self.underlyingClient.connect(to: url)
-                        }
-
-                        // Success!
-                        connectionState = .connected
-                        await configuration.reconnectionStrategy.reset()
-                        consecutiveHeartbeatFailures = 0
-
-                        // Restart background tasks
-                        startHeartbeat()
-                        startMessageSending()
-
-                        stateChangeHandlers.continuation.yield(.connected)
-                        break
-
-                    } catch {
-                        // Failed, will retry
-                        continue
-                    }
-                }
+                guard let self else { return }
+                if await self.completeReconnectionAttempt() { break }
             }
 
+            await self?.clearReconnectionTask(ifGeneration: generation)
+        }
+    }
+
+    /// Publish the attempt state and return the pre-attempt delay, or nil when the
+    /// strategy has given up (state settles to .disconnected).
+    private func beginReconnectionAttempt(_ attempt: Int) async -> UInt64? {
+        connectionState = .reconnecting(attempt: attempt)
+        stateChangeHandlers.continuation.yield(.reconnecting(attempt: attempt))
+
+        guard let delay = await configuration.reconnectionStrategy.delay(for: attempt, lastError: nil) else {
+            connectionState = .disconnected
+            stateChangeHandlers.continuation.yield(.disconnected)
+            return nil
+        }
+
+        return TimeConversion.secondsToNanoseconds(delay)
+    }
+
+    /// One reconnect attempt. Returns true when the loop should stop (connected or no URL).
+    private func completeReconnectionAttempt() async -> Bool {
+        guard let url = currentURL else { return true }
+
+        do {
+            try await withTimeout(seconds: configuration.connectionTimeout) { [weak self] in
+                guard let self = self else { throw WebSocketError.connectionFailed("Client deallocated") }
+                try await self.underlyingClient.connect(to: url)
+            }
+        } catch {
+            return false // retry
+        }
+
+        connectionState = .connected
+        await configuration.reconnectionStrategy.reset()
+        consecutiveHeartbeatFailures = 0
+
+        // Restart background tasks
+        startHeartbeat()
+        startMessageSending()
+
+        stateChangeHandlers.continuation.yield(.connected)
+        return true
+    }
+
+    private func clearReconnectionTask(ifGeneration generation: Int) {
+        if reconnectionGeneration == generation {
             reconnectionTask = nil
         }
     }
@@ -362,49 +414,57 @@ public actor RobustWebSocketClient: WebSocketClientProtocol {
         heartbeatTask?.cancel()
 
         guard configuration.heartbeatInterval > 0 else { return }
+        let interval = TimeConversion.secondsToNanoseconds(configuration.heartbeatInterval)
 
-        heartbeatTask = Task {
-            while !Task.isCancelled && isConnected {
-                try? await Task.sleep(nanoseconds: TimeConversion.secondsToNanoseconds(configuration.heartbeatInterval))
+        heartbeatTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: interval)
+                guard !Task.isCancelled else { break }
 
-                guard !Task.isCancelled && isConnected else { break }
-
-                do {
-                    try await ping()
-                } catch {
-                    // Ping failed, handled in ping() method
-                }
+                guard let self, await self.heartbeatTick() else { break }
             }
         }
+    }
+
+    /// Returns false when the heartbeat loop should stop.
+    private func heartbeatTick() async -> Bool {
+        guard isConnected else { return false }
+        try? await ping() // failures counted inside ping()
+        return true
     }
 
     private func startMessageSending() {
         messageSendingTask?.cancel()
 
-        messageSendingTask = Task {
-            while !Task.isCancelled && isConnected {
-                // Check for queued messages
-                if let queuedMessage = await messageQueue.dequeue() {
-                    do {
-                        switch queuedMessage.message {
-                        case .text(let text):
-                            try await underlyingClient.send(text: text)
-                        case .data(let data):
-                            try await underlyingClient.send(data: data)
-                        }
-                    } catch {
-                        // Failed to send, requeue if possible
-                        await messageQueue.requeue(queuedMessage)
+        messageSendingTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self, await self.messageSendingTick() else { break }
 
-                        // Brief pause before retrying
-                        try? await Task.sleep(nanoseconds: WebSocketConstants.messageQueueRetryDelayNanoseconds)
-                    }
-                } else {
-                    // No messages, wait a bit
-                    try? await Task.sleep(nanoseconds: WebSocketConstants.messageQueueRetryDelayNanoseconds)
-                }
+                try? await Task.sleep(nanoseconds: WebSocketConstants.messageQueueRetryDelayNanoseconds)
             }
         }
+    }
+
+    /// Drains queued messages until the queue is empty or a send fails (the failed
+    /// message is requeued and the caller's sleep provides the retry pause).
+    /// Returns false when the loop should stop.
+    private func messageSendingTick() async -> Bool {
+        guard isConnected else { return false }
+
+        while let queuedMessage = await messageQueue.dequeue() {
+            do {
+                switch queuedMessage.message {
+                case .text(let text):
+                    try await underlyingClient.send(text: text)
+                case .data(let data):
+                    try await underlyingClient.send(data: data)
+                }
+            } catch {
+                await messageQueue.requeue(queuedMessage)
+                break
+            }
+        }
+        return true
     }
 
     private func withTimeout<T: Sendable>(seconds: TimeInterval, operation: @escaping @Sendable () async throws -> T) async throws -> T {

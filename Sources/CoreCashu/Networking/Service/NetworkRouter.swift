@@ -7,7 +7,10 @@ import FoundationNetworking
 @CashuActor
 protocol NetworkRouterDelegate: AnyObject {
     func intercept(_ request: inout URLRequest) async
-    func shouldRetry(error: any Error, attempts: Int) async throws -> Bool
+    /// Decide whether to re-send `request` after `error`. Implementations MUST consider
+    /// the request's method: mint POSTs (swap/melt/mint) are not idempotent — re-sending
+    /// one after an ambiguous failure can double-submit a money operation.
+    func shouldRetry(request: URLRequest, error: any Error, attempts: Int) async throws -> Bool
     // Circuit breaker hooks
     func breakerRecordSuccess(forKey key: String) async
     func breakerRecordFailure(forKey key: String) async
@@ -55,12 +58,10 @@ internal class NetworkRouter<Endpoint: EndpointType>: NetworkRouterProtocol {
         
         self.urlSessionTaskDelegate = urlSessionTaskDelegate
         
-        if let decoder = decoder {
-            self.decoder = decoder
-        } else {
-            self.decoder = JSONDecoder()
-            self.decoder.keyDecodingStrategy = .convertFromSnakeCase
-        }
+        // Default key strategy on purpose: DTOs declare explicit snake_case
+        // CodingKeys, and `convertFromSnakeCase` would rewrite JSON keys before
+        // those explicit keys are matched (dropping fields like `fee_reserve`).
+        self.decoder = decoder ?? JSONDecoder()
     }
     
     /// This generic method will take a route and return the desired type via a network call
@@ -88,8 +89,7 @@ internal class NetworkRouter<Endpoint: EndpointType>: NetworkRouterProtocol {
                 guard let httpResponse = response as? HTTPURLResponse else { throw NetworkError.noStatusCode }
                 switch httpResponse.statusCode {
                 case 200...299:
-                    if let url = request.url {
-                        let key = url.host.map { $0 + url.path } ?? url.absoluteString
+                    if let key = EndpointKeyNormalizer.breakerKey(for: request) {
                         await delegate?.breakerRecordSuccess(forKey: key)
                     }
                     return try decoder.decode(T.self, from: data)
@@ -103,11 +103,18 @@ internal class NetworkRouter<Endpoint: EndpointType>: NetworkRouterProtocol {
                 // `noStatusCode`, decode failures). Recording in both places opened the
                 // breaker at half the configured threshold — see opus47.md §6.H.
                 lastError = error
-                if let url = request.url {
-                    let key = url.host.map { $0 + url.path } ?? url.absoluteString
-                    await delegate?.breakerRecordFailure(forKey: key)
+                if let key = EndpointKeyNormalizer.breakerKey(for: request) {
+                    // A 4xx means the endpoint answered and rejected the request — the
+                    // endpoint is healthy, so it must not push the breaker toward open
+                    // (a user retrying a bad token would otherwise self-DoS the wallet).
+                    // 408/429 and everything else (5xx, transport) count as failures.
+                    if EndpointKeyNormalizer.isEndpointHealthySignal(error) {
+                        await delegate?.breakerRecordSuccess(forKey: key)
+                    } else {
+                        await delegate?.breakerRecordFailure(forKey: key)
+                    }
                 }
-                let shouldRetry = try await delegate?.shouldRetry(error: error, attempts: attempts) ?? false
+                let shouldRetry = try await delegate?.shouldRetry(request: request, error: error, attempts: attempts) ?? false
                 if !shouldRetry { throw error }
             }
         }
@@ -118,6 +125,7 @@ internal class NetworkRouter<Endpoint: EndpointType>: NetworkRouterProtocol {
     func setDelegate(_ delegate: (any NetworkRouterDelegate)?) {
         self.delegate = delegate
     }
+
     
     func buildRequest(from route: Endpoint) async throws -> URLRequest {
         

@@ -212,13 +212,24 @@ public struct MintFeatureCapabilityManager: Sendable {
         return capabilities
     }
     
-    /// Get missing required capabilities
+    /// Get missing required capabilities.
+    ///
+    /// Base NUTs (info, keysets, swap) are mandatory protocol surface that compliant
+    /// mints routinely OMIT from the `nuts` map (nutshell lists only optional NUTs), so
+    /// their absence from `nuts` proves nothing — only mint/melt, which mints do
+    /// advertise via their NUT-04/05 settings, are checked, and then only when the mint
+    /// explicitly marks them disabled.
     public func missingRequiredCapabilities() -> Set<MintFeatureCapability> {
-        let required: Set<MintFeatureCapability> = [
-            .mintInfo, .keysets, .mintTokens, .meltTokens, .swap
-        ]
-        
-        return required.filter { !isSupported($0) }
+        var missing = Set<MintFeatureCapability>()
+
+        if let mintSettings = mintInfo.getNUT04Settings(), mintSettings.disabled {
+            missing.insert(.mintTokens)
+        }
+        if let meltSettings = mintInfo.getNUT05Settings(), meltSettings.disabled {
+            missing.insert(.meltTokens)
+        }
+
+        return missing
     }
     
     /// Check if mint supports all required capabilities

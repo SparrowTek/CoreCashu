@@ -39,8 +39,10 @@ public struct DefaultSecretRedactor: SecretRedactor {
                 // Matches hex seeds of various lengths
                 return #"\b[a-fA-F0-9]{32,128}\b"#
             case .token:
-                // Matches cashu token prefixes
-                return #"cashu[A-Za-z0-9+/]+=*"#
+                // Matches cashu token prefixes. The character class must cover BOTH
+                // base64 (+, /) and base64url (-, _) alphabets: V4 `cashuB` tokens are
+                // base64url, and stopping at the first `-`/`_` leaks the token's tail.
+                return #"cashu[A-Za-z0-9+/\-_]+=*"#
             case .secret:
                 // Matches secret-like patterns
                 return #"secret:[a-fA-F0-9]{32,}"#

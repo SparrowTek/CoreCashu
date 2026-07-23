@@ -671,7 +671,7 @@ public struct PaymentRequestProcessor: Sendable {
         }
         
         let keyResponse = try await keyExchangeService.getKeys(from: walletMintURL)
-        let mintKeys = Dictionary(uniqueKeysWithValues: keyResponse.keysets.flatMap { keyset in
+        let mintKeys = Dictionary(keyResponse.keysets.flatMap { keyset in
             keyset.keys.compactMap { (amountStr, publicKeyHex) -> (String, P256K.KeyAgreement.PublicKey)? in
                 guard let amount = Int(amountStr),
                       let publicKeyData = Data(hexString: publicKeyHex),
@@ -680,7 +680,7 @@ public struct PaymentRequestProcessor: Sendable {
                 }
                 return ("\(keyset.id)_\(amount)", publicKey)
             }
-        })
+        }, uniquingKeysWith: { first, _ in first })
         
         for (index, signature) in swapResponse.signatures.enumerated() {
             let blindedMessage = lockedBlindedMessages[index]

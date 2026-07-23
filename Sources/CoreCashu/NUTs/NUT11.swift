@@ -109,7 +109,9 @@ public struct P2PKSpendingCondition: Sendable {
                 case "sigflag":
                     signatureFlag = SignatureFlag(rawValue: tag[1]) ?? .sigInputs
                 case "n_sigs":
-                    requiredSigs = Int(tag[1]) ?? 1
+                    // Clamp to ≥1: a crafted `n_sigs: "0"` (or negative) must not turn a
+                    // multisig condition into "valid with zero signatures".
+                    requiredSigs = max(Int(tag[1]) ?? 1, 1)
                 case "pubkeys":
                     additionalPubkeys.append(contentsOf: tag.dropFirst())
                 case "locktime":

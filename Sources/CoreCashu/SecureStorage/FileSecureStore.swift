@@ -74,6 +74,8 @@ public actor FileSecureStore: SecureStore {
     private struct KeyState {
         var keyBytes: [UInt8]
         var metadata: KeyMetadata
+        /// True when the AES key is stored raw beside the ciphertext (no password).
+        var isEphemeral: Bool
     }
 
     private struct KeyMetadata: Codable, Sendable {
@@ -147,11 +149,23 @@ public actor FileSecureStore: SecureStore {
         self.configuration = configuration
         self.storageDirectory = Self.resolveDirectory(configuration.directory)
         try Self.prepareDirectory(storageDirectory)
+        // Finish or roll back any rotation a crash interrupted BEFORE reading the key.
+        try Self.recoverInterruptedRotation(
+            configuration: configuration,
+            storageDirectory: storageDirectory
+        )
         self.keyState = try Self.bootstrapKeyState(
             configuration: configuration,
             storageDirectory: storageDirectory,
             rotating: false
         )
+
+        // A password was supplied but the on-disk key is a raw ephemeral key from an
+        // earlier unprotected bootstrap. Silently honoring the old key would leave the
+        // store unprotected while the caller believes otherwise — upgrade in place.
+        if configuration.password != nil, keyState.isEphemeral {
+            try await rotateMasterKey()
+        }
     }
 
     // MARK: - SecureStore
@@ -233,46 +247,114 @@ public actor FileSecureStore: SecureStore {
 
     // MARK: - Key Rotation
 
+    /// Staged-file suffix used by rotation. Present `.rotating` files mark an in-flight
+    /// rotation; `recoverInterruptedRotation` resolves them on the next init.
+    private static let rotationSuffix = "rotating"
+
     /// Rotate the master encryption key and re-encrypt persisted data.
+    ///
+    /// Crash-safe by staging: every payload is re-encrypted under the new key into
+    /// `<file>.rotating` while the old key file remains authoritative; the atomic rename
+    /// of the staged key container over the live one is the commit point. A crash before
+    /// the commit abandons the rotation (old key + old data remain intact); a crash after
+    /// it is completed by `recoverInterruptedRotation` on the next init. The previous
+    /// implementation destroyed the old key *before* re-encrypting — a crash in that
+    /// window left the mnemonic/seed encrypted under a key that no longer existed.
     /// - Parameter newPassword: Optional password to use for the refreshed key. Defaults to the current configuration.
     public func rotateMasterKey(newPassword: String? = nil) async throws {
+        // 1. Load every payload under the CURRENT key.
         let mnemonic = try loadString(kind: .mnemonic)
         let seed = try loadString(kind: .seed)
         let tokens = try loadAccessTokensDictionary()
         let tokenLists = try loadAccessTokenListsDictionary()
 
+        var newConfiguration = configuration
         if let newPassword {
-            configuration.password = newPassword
+            newConfiguration.password = newPassword
         }
 
-        keyState = try Self.bootstrapKeyState(
-            configuration: configuration,
+        // 2. Mint the new key into a STAGED container — the live key file is untouched.
+        let keyURL = storageDirectory.appendingPathComponent(configuration.keyMaterialFileName)
+        let stagedKeyURL = keyURL.appendingPathExtension(Self.rotationSuffix)
+        let newKeyState = try Self.createKeyState(
+            configuration: newConfiguration,
             storageDirectory: storageDirectory,
-            rotating: true
+            keyURL: stagedKeyURL,
+            overwrite: true
         )
 
-        if let mnemonic {
-            try saveString(mnemonic, kind: .mnemonic)
-        } else {
-            try delete(kind: .mnemonic)
+        // 3. Re-encrypt each present payload under the new key into staged files.
+        var payloads: [StorageKind: Data] = [:]
+        if let mnemonic { payloads[.mnemonic] = Data(mnemonic.utf8) }
+        if let seed { payloads[.seed] = Data(seed.utf8) }
+        if !tokens.isEmpty { payloads[.accessTokens] = try JSONEncoder().encode(tokens) }
+        if !tokenLists.isEmpty { payloads[.accessTokenLists] = try JSONEncoder().encode(tokenLists) }
+
+        for (kind, plaintext) in payloads {
+            let envelope = try Self.encrypt(plaintext, keyBytes: newKeyState.keyBytes, nonceLength: newConfiguration.nonceLength)
+            let stagedURL = path(for: kind).appendingPathExtension(Self.rotationSuffix)
+            try Self.writeProtected(envelope, to: stagedURL)
         }
 
-        if let seed {
-            try saveString(seed, kind: .seed)
-        } else {
-            try delete(kind: .seed)
+        // 4. COMMIT: atomically replace the live key container with the staged one.
+        try Self.atomicRename(from: stagedKeyURL, to: keyURL)
+
+        // 5. Move staged payloads into place; remove stale files for absent payloads.
+        for kind in [StorageKind.mnemonic, .seed, .accessTokens, .accessTokenLists] {
+            let liveURL = path(for: kind)
+            let stagedURL = liveURL.appendingPathExtension(Self.rotationSuffix)
+            if payloads[kind] != nil {
+                try Self.atomicRename(from: stagedURL, to: liveURL)
+            } else if FileManager.default.fileExists(atPath: liveURL.path) {
+                try FileManager.default.removeItem(at: liveURL)
+            }
         }
 
-        if tokens.isEmpty {
-            try delete(kind: .accessTokens)
-        } else {
-            try saveAccessTokensDictionary(tokens)
+        // 6. Only now adopt the new key and configuration in memory.
+        configuration = newConfiguration
+        keyState = newKeyState
+    }
+
+    /// Resolve a rotation a crash interrupted. Two distinguishable states:
+    /// - Staged key container present → the commit never happened; the old key is still
+    ///   authoritative. Discard all staged files (payload files first, so a crash during
+    ///   cleanup can't masquerade as the committed state).
+    /// - No staged key but staged payloads present → the commit happened; finish moving
+    ///   the staged payloads into place.
+    private static func recoverInterruptedRotation(
+        configuration: Configuration,
+        storageDirectory: URL
+    ) throws {
+        let fileManager = FileManager.default
+        let keyURL = storageDirectory.appendingPathComponent(configuration.keyMaterialFileName)
+        let stagedKeyURL = keyURL.appendingPathExtension(rotationSuffix)
+
+        let payloadNames = [
+            configuration.fileNames.mnemonic,
+            configuration.fileNames.seed,
+            configuration.fileNames.accessTokens,
+            configuration.fileNames.accessTokenLists,
+        ]
+
+        if fileManager.fileExists(atPath: stagedKeyURL.path) {
+            // Abandoned rotation: staged payloads are encrypted under a key that never
+            // became authoritative. Remove payloads first, key marker last.
+            for name in payloadNames {
+                let staged = storageDirectory.appendingPathComponent(name).appendingPathExtension(rotationSuffix)
+                if fileManager.fileExists(atPath: staged.path) {
+                    try fileManager.removeItem(at: staged)
+                }
+            }
+            try fileManager.removeItem(at: stagedKeyURL)
+            return
         }
 
-        if tokenLists.isEmpty {
-            try delete(kind: .accessTokenLists)
-        } else {
-            try saveAccessTokenListsDictionary(tokenLists)
+        // Committed-but-unfinished rotation: promote remaining staged payloads.
+        for name in payloadNames {
+            let staged = storageDirectory.appendingPathComponent(name).appendingPathExtension(rotationSuffix)
+            if fileManager.fileExists(atPath: staged.path) {
+                try atomicRename(from: staged, to: storageDirectory.appendingPathComponent(name))
+            }
         }
     }
 
@@ -297,9 +379,7 @@ public actor FileSecureStore: SecureStore {
 
     private func saveData(_ data: Data, kind: StorageKind) throws {
         let encrypted = try encrypt(data)
-        let url = path(for: kind)
-        try encrypted.write(to: url, options: .atomic)
-        try Self.hardenFile(at: url)
+        try Self.writeProtected(encrypted, to: path(for: kind))
     }
 
     private func loadData(kind: StorageKind) throws -> Data? {
@@ -358,14 +438,23 @@ public actor FileSecureStore: SecureStore {
     // MARK: - Encryption / Decryption
 
     private func encrypt(_ plaintext: Data) throws -> Data {
-        let nonceData = try SecureRandom.generateBytes(count: configuration.nonceLength)
+        try Self.encrypt(plaintext, keyBytes: keyState.keyBytes, nonceLength: configuration.nonceLength)
+    }
+
+    private static func encrypt(_ plaintext: Data, keyBytes: [UInt8], nonceLength: Int) throws -> Data {
+        // The envelope stores the nonce length in one byte — reject configurations the
+        // format cannot represent instead of trapping in the UInt8 conversion.
+        guard nonceLength > 0, nonceLength <= 255 else {
+            throw SecureStoreError.storeFailed("Configured nonce length \(nonceLength) is outside the envelope's supported range 1...255")
+        }
+        let nonceData = try SecureRandom.generateBytes(count: nonceLength)
         let nonceBytes = Array(nonceData)
         let gcm = GCM(iv: nonceBytes, tagLength: CryptoConstants.gcmTagLength, mode: .combined)
-        let aes = try AES(key: keyState.keyBytes, blockMode: gcm, padding: .noPadding)
+        let aes = try AES(key: keyBytes, blockMode: gcm, padding: .noPadding)
         let ciphertext = try aes.encrypt(Array(plaintext))
 
         var envelope = Data()
-        envelope.append(Self.envelopeVersion)
+        envelope.append(envelopeVersion)
         envelope.append(UInt8(nonceBytes.count))
         envelope.append(contentsOf: nonceBytes)
         envelope.append(contentsOf: ciphertext)
@@ -419,12 +508,63 @@ public actor FileSecureStore: SecureStore {
             withIntermediateDirectories: true,
             attributes: [.posixPermissions: FileSystemConstants.directoryPermissions]
         )
+        // createDirectory silently skips attributes when the directory already exists —
+        // tighten it explicitly so a pre-existing world-readable directory is fixed.
+        try FileManager.default.setAttributes(
+            [.posixPermissions: FileSystemConstants.directoryPermissions],
+            ofItemAtPath: directory.path
+        )
+
+        #if os(iOS) || os(tvOS) || os(watchOS) || os(visionOS) || os(macOS)
+        // Wallet key material must not ride along in iCloud/local device backups: an
+        // ephemeral-mode store is plaintext-equivalent, and even password-mode ciphertext
+        // invites offline brute force from a stolen backup.
+        var backupExcluded = directory
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try? backupExcluded.setResourceValues(values)
+        #endif
     }
 
     private static func hardenFile(at url: URL) throws {
         try FileManager.default.setAttributes([
             .posixPermissions: FileSystemConstants.filePermissions
         ], ofItemAtPath: url.path)
+    }
+
+    /// Write `data` to `url` with owner-only permissions from birth: the bytes land in a
+    /// temp file created 0600 and are renamed into place, so the payload is never
+    /// observable through a default-umask window, and the swap is atomic.
+    private static func writeProtected(_ data: Data, to url: URL) throws {
+        let tempURL = url.deletingLastPathComponent()
+            .appendingPathComponent(".\(url.lastPathComponent).tmp-\(UUID().uuidString)")
+
+        guard FileManager.default.createFile(
+            atPath: tempURL.path,
+            contents: data,
+            attributes: [.posixPermissions: FileSystemConstants.filePermissions]
+        ) else {
+            throw SecureStoreError.storeFailed("Failed to create protected file at \(tempURL.lastPathComponent)")
+        }
+
+        do {
+            try atomicRename(from: tempURL, to: url)
+        } catch {
+            try? FileManager.default.removeItem(at: tempURL)
+            throw error
+        }
+    }
+
+    /// POSIX `rename(2)`: atomically replaces the destination if it exists.
+    private static func atomicRename(from source: URL, to destination: URL) throws {
+        let result = source.path.withCString { sourcePath in
+            destination.path.withCString { destinationPath in
+                rename(sourcePath, destinationPath)
+            }
+        }
+        guard result == 0 else {
+            throw SecureStoreError.storeFailed("Atomic rename failed for \(destination.lastPathComponent) (errno \(errno))")
+        }
     }
 
     private static func bootstrapKeyState(
@@ -466,7 +606,7 @@ public actor FileSecureStore: SecureStore {
         let container = try JSONDecoder().decode(KeyContainer.self, from: data)
 
         if let keyData = container.keyData {
-            return KeyState(keyBytes: Array(keyData), metadata: container.metadata)
+            return KeyState(keyBytes: Array(keyData), metadata: container.metadata, isEphemeral: true)
         }
 
         guard let password = configuration.password,
@@ -481,7 +621,7 @@ public actor FileSecureStore: SecureStore {
             rounds: rounds
         )
 
-        return KeyState(keyBytes: keyBytes, metadata: container.metadata)
+        return KeyState(keyBytes: keyBytes, metadata: container.metadata, isEphemeral: false)
     }
 
     private static func createKeyState(
@@ -535,10 +675,9 @@ public actor FileSecureStore: SecureStore {
         }
 
         let encoded = try JSONEncoder().encode(container)
-        try encoded.write(to: keyURL, options: .atomic)
-        try hardenFile(at: keyURL)
+        try writeProtected(encoded, to: keyURL)
 
-        return KeyState(keyBytes: keyBytes, metadata: container.metadata)
+        return KeyState(keyBytes: keyBytes, metadata: container.metadata, isEphemeral: container.keyData != nil)
     }
 
     private static func deriveKey(password: String, salt: Data, rounds: Int) throws -> [UInt8] {

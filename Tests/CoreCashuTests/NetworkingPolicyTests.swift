@@ -21,6 +21,7 @@ struct NetworkingPolicyTests {
         )
 
         let retry = try await delegate.shouldRetry(
+            request: URLRequest(url: URL(string: "https://mint.example.com/v1/info")!),
             error: NetworkError.statusCode(.internalServerError, data: Data()),
             attempts: 1
         )
@@ -40,6 +41,7 @@ struct NetworkingPolicyTests {
         )
 
         let retry = try await delegate.shouldRetry(
+            request: URLRequest(url: URL(string: "https://mint.example.com/v1/info")!),
             error: NetworkError.statusCode(.badRequest, data: Data()),
             attempts: 1
         )

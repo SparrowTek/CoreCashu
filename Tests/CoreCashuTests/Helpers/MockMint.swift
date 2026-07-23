@@ -496,13 +496,24 @@ public final class MockMint: Sendable {
             for proof in req.inputs {
                 try verifyAndConsume(proof: proof)
             }
-            // No fee return for now; if outputs are provided, we sign them but with zero amount each.
-            let change: [BlindSignature]?
+            // NUT-08: return the overpayment (input overshoot + unspent fee reserve; the
+            // mock's actual Lightning fee is 0) as change imprinted into the provided
+            // blank outputs, in order, omitting zero-valued ones — same as a real mint.
+            var change: [BlindSignature]?
+            let overpaid = inputTotal - quote.amount
             if let outputs = req.outputs, !outputs.isEmpty {
-                // For the simple mock we never actually return change — fee reserve is zero.
-                change = []
-            } else {
-                change = nil
+                if overpaid > 0 {
+                    let denominations = FeeReturnCalculator.decomposeToOptimalDenominations(overpaid)
+                    guard denominations.count <= outputs.count else {
+                        throw HandlerError(status: 400, detail: "not enough blank outputs for change \(overpaid)")
+                    }
+                    let assigned = zip(outputs, denominations).map { output, amount in
+                        BlindedMessage(amount: amount, id: output.id, B_: output.B_)
+                    }
+                    change = try sign(outputs: assigned)
+                } else {
+                    change = []
+                }
             }
             quote.state = .paid
             meltQuotes[req.quote] = quote

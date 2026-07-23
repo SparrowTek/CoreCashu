@@ -237,7 +237,7 @@ struct CryptographicTests {
                 witness: witnessString
             )
 
-            #expect(try HTLCVerifier.verifyPreimage(preimage: witness.preimage, hashLock: secret.hashLock ?? ""))
+            #expect(HTLCVerifier.verifyPreimage(preimage: witness.preimage, hashLock: secret.hashLock ?? ""))
             #expect(try HTLCVerifier.verifyHTLC(proof: proof, witness: witness))
 
             var mutated = Data(preimage)

@@ -16,7 +16,9 @@ import BigInt
 enum NUT13Constants {
     static let purpose: UInt32 = 129372 // 🥜 in UTF-8
     static let coinType: UInt32 = 0
-    static let maxKeysetInt: UInt32 = UInt32(1 << 31) - 1
+    // Spec: keyset_int = int(keyset_id_bytes) % (2^31 - 1). Written as a literal — the
+    // `UInt32(1 << 31)` form traps at load on 32-bit platforms where Int is 32 bits.
+    static let maxKeysetInt: UInt32 = 0x7FFF_FFFF
 }
 
 // MARK: - Key Derivation
@@ -41,8 +43,11 @@ public struct DeterministicSecretDerivation: Sendable {
             throw CashuError.invalidMnemonic
         }
 
-        let seed = await mnemonic.withString { plaintext in
-            createSeedFromMnemonic(mnemonic: plaintext, passphrase: passphrase)
+        // Single source of truth for seed derivation: BIP39.seed (NFKD-normalized
+        // PBKDF2-HMAC-SHA512, no fallback of any kind — a derivation failure throws
+        // rather than silently producing a non-standard seed).
+        let seed = try await mnemonic.withString { plaintext in
+            try BIP39.seed(from: plaintext, passphrase: passphrase)
         }
         self.masterKey = createMasterKeyFromSeed(seed: seed)
     }
@@ -89,10 +94,12 @@ public struct DeterministicSecretDerivation: Sendable {
             throw CashuError.invalidKeysetID
         }
         
+        // loadUnaligned: Data's storage carries no alignment guarantee for UInt64 —
+        // a plain `load` is a latent trap/UB off Apple arm64.
         let bigEndianValue = data.withUnsafeBytes { bytes in
-            bytes.load(as: UInt64.self)
+            bytes.loadUnaligned(as: UInt64.self)
         }
-        
+
         let value = UInt64(bigEndian: bigEndianValue)
         return UInt32(value % UInt64(NUT13Constants.maxKeysetInt))
     }
@@ -120,27 +127,77 @@ public struct DeterministicSecretDerivation: Sendable {
 
 // MARK: - Counter Management
 
+/// Tracks NUT-13 keyset counters, optionally backed by a ``KeysetCounterStorage``.
+///
+/// Counters gate deterministic secret derivation: a counter value must never be handed
+/// out twice, or the wallet re-submits identical blinded messages to the mint (rejected
+/// by compliant mints; double-issued by lenient ones). Two invariants enforce that here:
+///
+/// 1. **Write-ahead persistence** — a reservation is persisted *before* any secret for it
+///    is derived. If persistence fails, the reservation throws and no secrets are issued,
+///    so a crash can at worst leave an unused gap (harmless), never a reused counter.
+/// 2. **Atomic reservation** — the in-memory advance happens synchronously before any
+///    suspension point, so concurrent reservations can never hand out overlapping ranges.
 public actor KeysetCounterManager {
     private var counters: [String: UInt32] = [:]
-    
-    public func getCounter(for keysetID: String) -> UInt32 {
+    private let storage: (any KeysetCounterStorage)?
+    private var hydrated = false
+
+    public init(storage: (any KeysetCounterStorage)? = nil) {
+        self.storage = storage
+    }
+
+    /// Reserve a contiguous block of `count` counters and persist the advance.
+    /// Returns the starting counter of the block; the caller owns `start..<start+count`.
+    public func reserve(count: Int, for keysetID: String) async throws -> UInt32 {
+        try await hydrateIfNeeded()
+        let start = counters[keysetID] ?? 0
+        let next = start + UInt32(count)
+        // Advance memory before the persistence await so a reentrant caller can't
+        // observe (and re-reserve) the same range.
+        counters[keysetID] = next
+        try await persist(keysetID: keysetID, value: next)
+        return start
+    }
+
+    public func getCounter(for keysetID: String) async throws -> UInt32 {
+        try await hydrateIfNeeded()
         return counters[keysetID] ?? 0
     }
-    
-    public func incrementCounter(for keysetID: String) {
-        counters[keysetID] = (counters[keysetID] ?? 0) + 1
+
+    public func incrementCounter(for keysetID: String) async throws {
+        _ = try await reserve(count: 1, for: keysetID)
     }
-    
-    public func setCounter(for keysetID: String, value: UInt32) {
+
+    public func setCounter(for keysetID: String, value: UInt32) async throws {
+        try await hydrateIfNeeded()
         counters[keysetID] = value
+        try await persist(keysetID: keysetID, value: value)
     }
-    
-    public func resetCounter(for keysetID: String) {
-        counters[keysetID] = 0
+
+    public func resetCounter(for keysetID: String) async throws {
+        try await setCounter(for: keysetID, value: 0)
     }
-    
-    public func getAllCounters() -> [String: UInt32] {
+
+    public func getAllCounters() async throws -> [String: UInt32] {
+        try await hydrateIfNeeded()
         return counters
+    }
+
+    private func hydrateIfNeeded() async throws {
+        guard !hydrated else { return }
+        if let storage {
+            let stored = try await storage.getAllCounters()
+            // max-merge: counters never move backwards, and a concurrent in-memory
+            // advance during this load must not be clobbered by the stale snapshot.
+            counters.merge(stored) { max($0, $1) }
+        }
+        hydrated = true
+    }
+
+    private func persist(keysetID: String, value: UInt32) async throws {
+        guard let storage else { return }
+        try await storage.setCounter(for: keysetID, value: value)
     }
 }
 
@@ -258,31 +315,6 @@ public struct WalletRestoration: Sendable {
 // MARK: - BIP32 Helpers
 
 // Helper functions for BIP32 key derivation
-
-// Create seed from mnemonic following BIP39 standard
-private func createSeedFromMnemonic(mnemonic: String, passphrase: String) -> Data {
-    let mnemonicData = mnemonic.data(using: .utf8) ?? Data()
-    let salt = "mnemonic\(passphrase)".data(using: .utf8) ?? Data()
-    
-    // BIP39 specifies PBKDF2 with HMAC-SHA512, 2048 iterations
-    // Using CryptoSwift for cross-platform compatibility
-    do {
-        let password = Array(mnemonicData)
-        let saltBytes = Array(salt)
-        let seed = try PKCS5.PBKDF2(
-            password: password,
-            salt: saltBytes,
-            iterations: 2048,
-            keyLength: 64,
-            variant: .sha2(.sha512)
-        ).calculate()
-        return Data(seed)
-    } catch {
-        // Fallback to a deterministic but non-standard seed
-        let combined = mnemonicData + salt
-        return Hash.sha512(combined)
-    }
-}
 
 private func createMasterKeyFromSeed(seed: Data) -> Data {
     let key = "Bitcoin seed".data(using: .utf8) ?? Data()

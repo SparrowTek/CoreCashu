@@ -165,9 +165,12 @@ public actor AccessTokenService: Sendable {
             try generateRandomBytes(count: 32)
         }
         
-        // Create blinded messages
+        // Create blinded messages. The wire-format secret is the HEX STRING of the random
+        // bytes (that's what lands in `Proof.secret`), so hash_to_curve must run over the
+        // UTF-8 bytes of that hex string — the mint verifies the spent token the same way.
+        // Hashing the raw bytes here would issue tokens that can never be redeemed.
         let blindedMessages = try zip(secrets, factors).map { (secret, factor) in
-            let B_ = try blindMessage(secret: secret, blindingFactor: factor)
+            let B_ = try blindMessage(secret: Data(secret.hexString.utf8), blindingFactor: factor)
             return BlindedMessage(amount: 1, id: keysetId, B_: B_.hexString)
         }
         

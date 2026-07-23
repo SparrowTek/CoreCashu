@@ -92,6 +92,16 @@ adds or revises a NUT, an issue should be opened to triage scope.
 
 ## Change log
 
+- **2026-07-23** — production-readiness audit. NUT-00 V4 codec rewritten (direct CBOR,
+  official vectors pass, DLEQ/witness preserved — the old JSON-bridged codec crashed on
+  every real `cashuB` token). NUT-05/08 melt now actually sends blank outputs and
+  credits change; `payment_preimage`/quote `change` decoded. NUT-09 restore aligns
+  signatures by echoed outputs and scans inactive keysets. NUT-13 counters persist via
+  `counterStorage` (write-ahead). NUT-14 verifier signs/verifies the full secret and
+  gates refunds on locktime. NUT-17 `params` is a JSON object. NUT-20 fabricated wallet
+  entry points removed (primitives remain). Snake-case decoder strategy removed
+  (`fee_reserve`/`input_fee_ppk` were silently nil against real mints). See
+  CHANGELOG "Production-readiness audit fixes".
 - **2026-04-28** — initial matrix. Phase 2.1, 2.2, 2.5 landed (NUT-11,
   NUT-19, NUT-24 fixes). Phase 2.3 (NUT-21 JWT verification) and Phase 2.4
   (NUT-22 endpoint+DLEQ) tracked but not yet implemented.

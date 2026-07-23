@@ -12,10 +12,16 @@ import FoundationNetworking
 #endif
 
 extension JSONDecoder {
+    /// Decoder for mint HTTP responses.
+    ///
+    /// Uses the default key strategy: every Cashu DTO declares explicit `CodingKeys`
+    /// for its snake_case JSON fields (e.g. `fee_reserve`, `input_fee_ppk`).
+    /// `convertFromSnakeCase` must never be reintroduced here — it rewrites the JSON
+    /// keys before explicit `CodingKeys` are matched, which silently nils optional
+    /// fields like `PostMeltQuoteResponse.feeReserve` and mangles the keys of
+    /// `[String: AnyCodable]` payloads such as `MintInfo.nuts` settings.
     static var cashuDecoder: JSONDecoder {
         let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
-        
         decoder.dateDecodingStrategy = .custom { decoder in
             let container = try decoder.singleValueContainer()
             let timestampInSeconds = try container.decode(Int.self)
@@ -27,11 +33,46 @@ extension JSONDecoder {
 }
 
 extension JSONEncoder {
+    /// Encoder counterpart to ``JSONDecoder/cashuDecoder`` — default key strategy,
+    /// snake_case comes from each DTO's explicit `CodingKeys`.
     static var cashuEncoder: JSONEncoder {
-        let encoder = JSONEncoder()
-        encoder.keyEncodingStrategy = .convertToSnakeCase
-        
-        return encoder
+        JSONEncoder()
+    }
+}
+
+/// Shared helpers for keying per-endpoint state (rate limiters, circuit breakers).
+enum EndpointKeyNormalizer {
+    /// Collapse per-resource URL paths onto their endpoint template so state maps stay
+    /// bounded: `/v1/melt/quote/bolt11/TRmjduhIsPxd9YWKZikuRi6g` and every other quote
+    /// share one key. Any path segment of 16+ ID-ish characters (quote IDs, keyset IDs)
+    /// is replaced with a placeholder; the fixed protocol segments (`mint`, `melt`,
+    /// `quote`, `bolt11`, …) are all shorter and pass through untouched.
+    static func normalize(path: String) -> String {
+        let segments = path.split(separator: "/").map { segment -> Substring in
+            if segment.count >= 16, segment.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "_" || $0 == "-" }) {
+                return "{id}"
+            }
+            return segment
+        }
+        return "/" + segments.joined(separator: "/")
+    }
+
+    /// Circuit-breaker key for a request: host + normalized path, so per-quote URLs
+    /// share one breaker per endpoint instead of minting an entry per quote ID.
+    static func breakerKey(for request: URLRequest) -> String? {
+        guard let url = request.url else { return nil }
+        let path = normalize(path: url.path)
+        return url.host.map { $0 + path } ?? url.absoluteString
+    }
+
+    /// True when the error proves the endpoint is alive and answering (an active 4xx
+    /// rejection other than 408/429). Such errors must not open the circuit breaker.
+    static func isEndpointHealthySignal(_ error: any Error) -> Bool {
+        if case NetworkError.statusCode(let code?, _) = error {
+            let raw = code.rawValue
+            return (400..<500).contains(raw) && raw != 408 && raw != 429
+        }
+        return false
     }
 }
 
@@ -57,8 +98,18 @@ class CashuRouterDelegate: NetworkRouterDelegate {
 
     var maxRetryAttempts: Int { policy.retryPolicy.maxAttempts }
 
-    func shouldRetry(error: any Error, attempts: Int) async throws -> Bool {
+    func shouldRetry(request: URLRequest, error: any Error, attempts: Int) async throws -> Bool {
         guard attempts < policy.retryPolicy.maxAttempts else { return false }
+
+        // Only idempotent requests are ever re-sent automatically. Cashu's money-moving
+        // endpoints (swap/melt/mint) are POST: a timed-out POST may have been processed,
+        // and re-sending it double-submits the operation — mints don't implement the
+        // Idempotency-Key header, and NUT-19 response caching is optional. Non-GET
+        // failures surface to the wallet layer, which resolves them by re-checking
+        // quote/proof state instead of re-sending.
+        guard request.httpMethod?.uppercased() == HTTPMethod.get.rawValue.uppercased() else {
+            return false
+        }
 
         var shouldRetry = false
 
@@ -88,16 +139,24 @@ class CashuRouterDelegate: NetworkRouterDelegate {
     }
 
     func intercept(_ request: inout URLRequest) async {
-        let path = request.url?.path ?? ""
+        // Normalized path so per-quote URLs share one limiter/breaker per endpoint
+        // instead of growing an entry per quote ID for the process lifetime.
+        let path = EndpointKeyNormalizer.normalize(path: request.url?.path ?? "")
         if await !rateLimiter.shouldAllowRequest(for: path) {
-            try? await rateLimiter.waitForAvailability(for: path)
+            do {
+                try await rateLimiter.waitForAvailability(for: path)
+            } catch {
+                // Cancellation while waiting must not fall through to sending the
+                // request anyway — propagate by marking the request denied.
+                request.addValue("1", forHTTPHeaderField: "X-Cashu-CB-Denied")
+                return
+            }
         }
         await rateLimiter.recordRequest(for: path)
 
         applyIdempotencyKeyIfNeeded(&request)
 
-        if let url = request.url {
-            let key = url.host.map { $0 + url.path } ?? url.absoluteString
+        if let key = EndpointKeyNormalizer.breakerKey(for: request) {
             if breakers[key] == nil { breakers[key] = EndpointCircuitBreaker(configuration: policy.circuitBreaker) }
             if let breaker = breakers[key], await !breaker.allowRequest() {
                 request.addValue("1", forHTTPHeaderField: "X-Cashu-CB-Denied")

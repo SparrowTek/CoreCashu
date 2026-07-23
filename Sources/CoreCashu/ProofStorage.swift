@@ -161,6 +161,12 @@ public final class ProofManager: Sendable {
     }
     
     /// Get all available (unspent) proofs
+    /// Every stored proof, including ones reserved as pending-spent. Use for dedup and
+    /// bookkeeping — spend paths must go through ``getAvailableProofs()``.
+    public func getAllProofs() async throws -> [Proof] {
+        try await storage.retrieveAll()
+    }
+
     public func getAvailableProofs() async throws -> [Proof] {
         let allProofs = try await storage.retrieveAll()
         let pending = try await storage.getPendingSpent()

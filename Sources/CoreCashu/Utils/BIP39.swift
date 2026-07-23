@@ -82,46 +82,28 @@ public enum BIP39 {
     }()
     
     /// Load the BIP39 wordlist from embedded resource
+    /// SHA-256 of the 2048 canonical BIP39 English words joined by "\n". Pins the bundled
+    /// resource to the official list from bitcoin/bips.
+    private static let wordlistDigestHex = "187db04a869dd9bc7be80d21a86497d692c0db6abd3aa8cb6be5d618ff757fae"
+
     private static func loadWordlist() -> [String] {
-        // For Swift Package Manager resources
-        #if canImport(Foundation)
-        if let url = Bundle.module.url(forResource: "bip39-english", withExtension: "txt"),
-           let content = try? String(contentsOf: url, encoding: .utf8) {
-            let words = content.split(separator: "\n").map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
-            if words.count == 2048 {
-                return words
-            }
+        // The wordlist is a bundled SwiftPM resource; it is integrity-checked against the
+        // canonical BIP39 digest. There is deliberately NO fallback of any kind: a wallet
+        // that fabricates or substitutes a wordlist generates mnemonics that no other
+        // implementation can ever restore. A missing/corrupt resource is a broken build
+        // and must fail loudly at first use, not degrade.
+        guard let url = Bundle.module.url(forResource: "bip39-english", withExtension: "txt"),
+              let content = try? String(contentsOf: url, encoding: .utf8) else {
+            preconditionFailure("CoreCashu resource bip39-english.txt is missing — package resources not bundled correctly")
         }
-        #endif
-        
-        // Try to load from various possible file locations
-        let paths = [
-            "Sources/CoreCashu/Resources/bip39-english.txt",
-            "bip39-english.txt",
-            "/Users/rademaker/Developer/SparrowTek/Bitcoin/Cashu/CoreCashu/Sources/CoreCashu/Resources/bip39-english.txt"
-        ]
-        
-        for path in paths {
-            if let content = try? String(contentsOfFile: path, encoding: .utf8) {
-                let words = content.split(separator: "\n").map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
-                if words.count == 2048 {
-                    return words
-                }
-            }
+
+        let words = content.split(separator: "\n").map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+        let digest = Hash.sha256(Data(words.joined(separator: "\n").utf8)).hexString
+
+        guard words.count == 2048, digest == wordlistDigestHex else {
+            preconditionFailure("CoreCashu resource bip39-english.txt failed integrity check — refusing to derive keys from a non-canonical wordlist")
         }
-        
-        // Hardcode a minimal wordlist for emergency fallback
-        // This will allow basic functionality but should not be used in production
-        return generateFallbackWordlist()
-    }
-    
-    /// Generate a fallback wordlist for testing (NOT FOR PRODUCTION)
-    private static func generateFallbackWordlist() -> [String] {
-        // Generate predictable words for testing only
-        var words: [String] = []
-        for i in 0..<2048 {
-            words.append(String(format: "word%04d", i))
-        }
+
         return words
     }
     
@@ -283,9 +265,13 @@ private extension String {
 // MARK: - Bridge to existing implementation
 
 private func createSeedFromMnemonic(mnemonic: String, passphrase: String) throws -> Data {
-    let mnemonicData = mnemonic.data(using: .utf8) ?? Data()
-    let salt = "mnemonic\(passphrase)".data(using: .utf8) ?? Data()
-    
+    // BIP39 mandates NFKD normalization of both the mnemonic and the passphrase before
+    // PBKDF2 — without it, non-ASCII passphrases derive seeds no other wallet reproduces.
+    let normalizedMnemonic = mnemonic.decomposedStringWithCompatibilityMapping
+    let normalizedPassphrase = passphrase.decomposedStringWithCompatibilityMapping
+    let mnemonicData = Data(normalizedMnemonic.utf8)
+    let salt = Data("mnemonic\(normalizedPassphrase)".utf8)
+
     // BIP39 specifies PBKDF2 with HMAC-SHA512, 2048 iterations.
     return pbkdf2SHA512(
         password: mnemonicData,

@@ -141,34 +141,24 @@ private func reduceScalar(_ scalar: Data) -> Data {
 
 // MARK: - Optimized Scalar Operations
 
+// Scalar arithmetic must never degrade: an error here has to propagate, because
+// "return an unrelated scalar instead" produces a structurally valid but
+// cryptographically wrong DLEQ proof that verifiers will reject — or worse, that
+// leaks nothing obvious while being meaningless.
+
 /// Add two scalars modulo the secp256k1 curve order
-private func addScalars(_ a: Data, _ b: Data) -> Data {
-    do {
-        return try addScalarsModular(a, b)
-    } catch {
-        // Fallback to simple addition if P256K operations fail
-        return a // This should not happen in practice
-    }
+private func addScalars(_ a: Data, _ b: Data) throws -> Data {
+    try addScalarsModular(a, b)
 }
 
 /// Multiply two scalars modulo the secp256k1 curve order
-private func multiplyScalars(_ a: Data, _ b: Data) -> Data {
-    do {
-        return try multiplyScalarsModular(a, b)
-    } catch {
-        // Fallback if P256K operations fail
-        return a // This should not happen in practice
-    }
+private func multiplyScalars(_ a: Data, _ b: Data) throws -> Data {
+    try multiplyScalarsModular(a, b)
 }
 
 /// Subtract two scalars modulo the secp256k1 curve order
-private func subtractScalars(_ a: Data, _ b: Data) -> Data {
-    do {
-        return try subtractScalarsModular(a, b)
-    } catch {
-        // Fallback if P256K operations fail
-        return a // This should not happen in practice
-    }
+private func subtractScalars(_ a: Data, _ b: Data) throws -> Data {
+    try subtractScalarsModular(a, b)
 }
 
 // MARK: - Secure Random Generation
@@ -221,10 +211,10 @@ public func generateDLEQProof(
     let eScalar = Data(eData.prefix(32)) // Reduce e to 32 bytes
     
     // e*a mod n
-    let ea = multiplyScalars(eScalar, aData)
+    let ea = try multiplyScalars(eScalar, aData)
     
     // s = r + e*a mod n
-    let sData = addScalars(rData, ea)
+    let sData = try addScalars(rData, ea)
     
     return DLEQProof(
         e: eData.hexString,

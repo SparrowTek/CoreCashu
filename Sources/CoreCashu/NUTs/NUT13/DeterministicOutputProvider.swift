@@ -30,11 +30,10 @@ public struct DeterministicOutputProvider: Sendable {
 
     /// Reserve a contiguous block of `count` counters for `keysetID` and advance the manager.
     /// Returns the **starting** counter for the block; the caller fills counters
-    /// `start..<start+count`.
-    public func reserve(count: Int, for keysetID: String) async -> UInt32 {
-        let start = await counterManager.getCounter(for: keysetID)
-        await counterManager.setCounter(for: keysetID, value: start + UInt32(count))
-        return start
+    /// `start..<start+count`. The reservation is persisted (write-ahead) before it is
+    /// returned, so a crash can leave a gap but never a reused counter.
+    public func reserve(count: Int, for keysetID: String) async throws -> UInt32 {
+        try await counterManager.reserve(count: count, for: keysetID)
     }
 
     /// Derive `(secret, blindingFactor)` at the given counter. Pure function — does not
@@ -48,7 +47,7 @@ public struct DeterministicOutputProvider: Sendable {
     /// Convenience: build N `WalletBlindingData` instances for `keysetID`, advancing the
     /// counter by N. Used by mint/swap services when the wallet has a deterministic source.
     public func makeBlindingData(count: Int, for keysetID: String) async throws -> [WalletBlindingData] {
-        let start = await reserve(count: count, for: keysetID)
+        let start = try await reserve(count: count, for: keysetID)
         var result: [WalletBlindingData] = []
         result.reserveCapacity(count)
         for offset in 0..<count {

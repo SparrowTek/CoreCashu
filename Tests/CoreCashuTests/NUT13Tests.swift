@@ -88,33 +88,33 @@ struct NUT13Tests {
     }
     
     @Test("Counter management")
-    func testCounterManagement() async {
+    func testCounterManagement() async throws {
         let manager = KeysetCounterManager()
         let keysetID = "test_keyset"
         
         // Initial counter should be 0
-        let initial = await manager.getCounter(for: keysetID)
+        let initial = try await manager.getCounter(for: keysetID)
         #expect(initial == 0)
         
         // Increment counter
-        await manager.incrementCounter(for: keysetID)
-        let afterIncrement = await manager.getCounter(for: keysetID)
+        try await manager.incrementCounter(for: keysetID)
+        let afterIncrement = try await manager.getCounter(for: keysetID)
         #expect(afterIncrement == 1)
         
         // Set specific value
-        await manager.setCounter(for: keysetID, value: 10)
-        let afterSet = await manager.getCounter(for: keysetID)
+        try await manager.setCounter(for: keysetID, value: 10)
+        let afterSet = try await manager.getCounter(for: keysetID)
         #expect(afterSet == 10)
         
         // Reset counter
-        await manager.resetCounter(for: keysetID)
-        let afterReset = await manager.getCounter(for: keysetID)
+        try await manager.resetCounter(for: keysetID)
+        let afterReset = try await manager.getCounter(for: keysetID)
         #expect(afterReset == 0)
         
         // Multiple keysets
         let keysetID2 = "another_keyset"
-        await manager.setCounter(for: keysetID2, value: 5)
-        let counters = await manager.getAllCounters()
+        try await manager.setCounter(for: keysetID2, value: 5)
+        let counters = try await manager.getAllCounters()
         #expect(counters[keysetID] == 0)
         #expect(counters[keysetID2] == 5)
     }

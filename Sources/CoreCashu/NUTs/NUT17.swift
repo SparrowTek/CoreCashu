@@ -87,27 +87,60 @@ public struct WsUnsubscribeParams: CashuCodabale {
 
 // MARK: - Request/Response Types
 
+/// Parameters of a ``WsRequest``, encoded on the wire as a JSON **object** (NUT-17).
+public enum WsRequestParams: CashuCodabale {
+    case subscribe(WsSubscribeParams)
+    case unsubscribe(WsUnsubscribeParams)
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .subscribe(let params):
+            try container.encode(params)
+        case .unsubscribe(let params):
+            try container.encode(params)
+        }
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        // Subscribe params carry `kind`/`filters`; unsubscribe only `subId`. Try the
+        // richer shape first.
+        if let subscribe = try? container.decode(WsSubscribeParams.self) {
+            self = .subscribe(subscribe)
+        } else if let unsubscribe = try? container.decode(WsUnsubscribeParams.self) {
+            self = .unsubscribe(unsubscribe)
+        } else {
+            throw DecodingError.dataCorrupted(DecodingError.Context(
+                codingPath: decoder.codingPath,
+                debugDescription: "Unrecognized WsRequest params shape"
+            ))
+        }
+    }
+}
+
 /// WebSocket request from wallet to mint
 public struct WsRequest: CashuCodabale {
     /// JSON-RPC version
     public let jsonrpc: String
-    
+
     /// Request method
     public let method: WsRequestMethod
-    
-    /// Request parameters (serialized JSON string)
-    public let params: String
-    
+
+    /// Request parameters. Encoded as a JSON object per NUT-17 — mints reject a
+    /// stringified params payload.
+    public let params: WsRequestParams
+
     /// Request ID (incrementing integer)
     public let id: Int
-    
-    public init(method: WsRequestMethod, params: String, id: Int) {
+
+    public init(method: WsRequestMethod, params: WsRequestParams, id: Int) {
         self.jsonrpc = jsonRPCVersion
         self.method = method
         self.params = params
         self.id = id
     }
-    
+
     /// Create a subscribe request
     public static func subscribe(
         kind: SubscriptionKind,
@@ -115,26 +148,18 @@ public struct WsRequest: CashuCodabale {
         filters: [String],
         id: Int
     ) throws -> WsRequest {
-        let params = WsSubscribeParams(kind: kind, subId: subId, filters: filters)
-        let paramsData = try JSONEncoder().encode(params)
-        let paramsString = String(data: paramsData, encoding: .utf8) ?? "{}"
-        
-        return WsRequest(
+        WsRequest(
             method: .subscribe,
-            params: paramsString,
+            params: .subscribe(WsSubscribeParams(kind: kind, subId: subId, filters: filters)),
             id: id
         )
     }
-    
+
     /// Create an unsubscribe request
     public static func unsubscribe(subId: String, id: Int) throws -> WsRequest {
-        let params = WsUnsubscribeParams(subId: subId)
-        let paramsData = try JSONEncoder().encode(params)
-        let paramsString = String(data: paramsData, encoding: .utf8) ?? "{}"
-        
-        return WsRequest(
+        WsRequest(
             method: .unsubscribe,
-            params: paramsString,
+            params: .unsubscribe(WsUnsubscribeParams(subId: subId)),
             id: id
         )
     }

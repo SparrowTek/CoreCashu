@@ -43,14 +43,18 @@ public struct MintQuoteResponse: CashuCodabale {
     public let quote: String
     public let request: String
     public let unit: String
+    /// Amount the quote was created for. Mints echo this per NUT-04/NUT-23; the wallet
+    /// cross-checks it against the caller's amount before minting.
+    public let amount: Int?
     public let paid: Bool?
     public let expiry: Int?
     public let state: String?
-    
-    public init(quote: String, request: String, unit: String, paid: Bool? = nil, expiry: Int? = nil, state: String? = nil) {
+
+    public init(quote: String, request: String, unit: String, amount: Int? = nil, paid: Bool? = nil, expiry: Int? = nil, state: String? = nil) {
         self.quote = quote
         self.request = request
         self.unit = unit
+        self.amount = amount
         self.paid = paid
         self.expiry = expiry
         self.state = state
@@ -469,7 +473,7 @@ public struct MintService: Sendable {
         
         let keyExchangeService = await KeyExchangeService(networking: networking)
         let keyResponse = try await keyExchangeService.getKeys(from: mintURL)
-        let mintKeys = Dictionary(uniqueKeysWithValues: keyResponse.keysets.flatMap { keyset in
+        let mintKeys = Dictionary(keyResponse.keysets.flatMap { keyset in
             keyset.keys.compactMap { (amountStr, publicKeyHex) -> (String, P256K.KeyAgreement.PublicKey)? in
                 guard let amount = Int(amountStr),
                       let publicKeyData = Data(hexString: publicKeyHex),
@@ -478,35 +482,57 @@ public struct MintService: Sendable {
                 }
                 return ("\(keyset.id)_\(amount)", publicKey)
             }
-        })
+        }, uniquingKeysWith: { first, _ in first })
         
         var newProofs: [Proof] = []
         
         for (index, signature) in response.signatures.enumerated() {
             let blindingData = preparation.blindingData[index]
+
+            // Cross-check the mint's stated amount/keyset against the requested output —
+            // a misbehaving mint must not be able to shortchange the quote.
+            let requested = preparation.blindedMessages[index]
+            guard signature.amount == requested.amount,
+                  requested.id == nil || requested.id == signature.id else {
+                throw CashuError.invalidSignature("Mint returned signature for amount \(signature.amount), requested \(requested.amount)")
+            }
+
             let mintKeyKey = "\(signature.id)_\(signature.amount)"
-            
+
             guard let mintPublicKey = mintKeys[mintKeyKey] else {
                 throw CashuError.invalidSignature("Mint public key not found for amount \(signature.amount)")
             }
-            
+
             guard let blindedSignatureData = Data(hexString: signature.C_) else {
                 throw CashuError.invalidHexString
             }
-            
+
+            // Verify the DLEQ proof whenever the mint provides one (NUT-12).
+            if let dleq = signature.dleq {
+                guard let blindedSignaturePoint = try? P256K.KeyAgreement.PublicKey(dataRepresentation: blindedSignatureData, format: .compressed),
+                      try verifyDLEQProofAlice(
+                        proof: dleq,
+                        mintPublicKey: mintPublicKey,
+                        blindedMessage: blindingData.blindedMessage,
+                        blindedSignature: blindedSignaturePoint
+                      ) else {
+                    throw CashuError.invalidSignature("DLEQ proof verification failed for mint output \(index)")
+                }
+            }
+
             let unblindedToken = try Wallet.unblindSignature(
                 blindedSignature: blindedSignatureData,
                 blindingData: blindingData,
                 mintPublicKey: mintPublicKey
             )
-            
+
             let proof = Proof(
                 amount: signature.amount,
                 id: signature.id,
                 secret: unblindedToken.secret,
                 C: unblindedToken.signature.hexString
             )
-            
+
             newProofs.append(proof)
         }
         

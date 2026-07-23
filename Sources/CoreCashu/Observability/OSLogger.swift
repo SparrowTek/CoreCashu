@@ -6,7 +6,24 @@ import os.log
 /// Provides structured logging with privacy controls and efficient performance
 public final class OSLogger: LoggerProtocol, @unchecked Sendable {
 
-    public var minimumLevel: LogLevel
+    /// Backing storage for `minimumLevel`, guarded by a lock: the protocol requires a
+    /// settable property on a Sendable conformer, and an unsynchronized `var` read on
+    /// every log call is a data race the moment any thread adjusts verbosity at runtime.
+    private let minimumLevelLock = NSLock()
+    private var _minimumLevel: LogLevel
+
+    public var minimumLevel: LogLevel {
+        get {
+            minimumLevelLock.lock()
+            defer { minimumLevelLock.unlock() }
+            return _minimumLevel
+        }
+        set {
+            minimumLevelLock.lock()
+            defer { minimumLevelLock.unlock() }
+            _minimumLevel = newValue
+        }
+    }
 
     /// The subsystem for logging (typically bundle identifier)
     private let subsystem: String
@@ -32,7 +49,7 @@ public final class OSLogger: LoggerProtocol, @unchecked Sendable {
     ) {
         self.subsystem = subsystem
         self.category = category
-        self.minimumLevel = minimumLevel
+        self._minimumLevel = minimumLevel
         self.enableRedaction = enableRedaction
         self.redactor = redactor ?? DefaultSecretRedactor()
         self.osLog = OSLog(subsystem: subsystem, category: category)

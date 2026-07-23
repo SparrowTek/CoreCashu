@@ -87,132 +87,132 @@ public struct HTLCVerifier: Sendable {
               secret.isHTLC else {
             throw CashuError.invalidSecret
         }
-        
-        // Verify the preimage matches the hash lock
-        let preimageVerified = try verifyPreimage(
+
+        // NUT-14 inherits NUT-11: every signature commits to the FULL serialized secret
+        // string (the value in `proof.secret`), which binds the hash lock, pubkeys, and
+        // locktime. Signing only the nonce would let a witness be replayed across
+        // conditions — and no spec-compliant mint would accept it.
+        let signedMessage = proof.secret
+
+        // A malformed or absent preimage is simply "preimage not satisfied" — the refund
+        // branch must still be reachable (refund witnesses carry an empty preimage).
+        let preimageVerified = verifyPreimage(
             preimage: witness.preimage,
             hashLock: secret.hashLock ?? ""
         )
-        
+
         // If preimage verification fails, check refund conditions
         if !preimageVerified {
-            // Check if locktime has passed for refund
-            if let locktime = secret.locktime,
-               currentTime < locktime {
+            // NUT-11 semantics: with no locktime the secret is permanently locked to the
+            // primary condition — the refund key never becomes spendable.
+            guard let locktime = secret.locktime else {
+                return false
+            }
+            guard currentTime >= locktime else {
                 throw CashuError.locktimeNotExpired
             }
-            
-            // Verify refund signature if preimage check failed
+
+            // Verify refund signature after locktime expiry
             if let refundKey = secret.refundPublicKey {
-                return try verifyRefundSignature(
-                    secret: secret,
+                return verifyRefundSignature(
+                    message: signedMessage,
                     witness: witness,
                     refundKey: refundKey
                 )
             }
-            
+
             return false
         }
-        
+
         // Verify signatures for authorized public keys
         guard let pubkeys = secret.pubkeys, !pubkeys.isEmpty else {
             // If no pubkeys specified, preimage alone is sufficient
             return preimageVerified
         }
-        
-        return try verifySignatures(
-            secret: secret,
+
+        return verifySignatures(
+            message: signedMessage,
             witness: witness,
-            pubkeys: pubkeys
+            pubkeys: pubkeys,
+            requiredSigs: requiredSignatureCount(for: secret)
         )
     }
-    
-    /// Verify the preimage matches the hash lock
-    static func verifyPreimage(preimage: String, hashLock: String) throws -> Bool {
+
+    /// The `n_sigs` threshold: k-of-n distinct signers, defaulting to 1 and never below 1.
+    private static func requiredSignatureCount(for secret: WellKnownSecret) -> Int {
+        guard let tag = secret.secretData.tags?.first(where: { $0.first == "n_sigs" }),
+              tag.count > 1,
+              let value = Int(tag[1]) else {
+            return 1
+        }
+        return max(value, 1)
+    }
+
+    /// Verify the preimage matches the hash lock. Malformed input is a failed match, not
+    /// an error — callers fall through to the refund branch.
+    static func verifyPreimage(preimage: String, hashLock: String) -> Bool {
         guard let preimageData = Data(hexString: preimage),
               preimageData.count == 32 else {
-            throw CashuError.invalidPreimage
+            return false
         }
-        
+
         let computedHash = Hash.sha256(preimageData)
-        
+
         // Compare using constant-time comparison for defense in depth
         guard let lockData = Data(hexString: hashLock.lowercased()) else {
             return false
         }
-        
+
         return SecureMemory.constantTimeCompare(computedHash, lockData)
     }
-    
-    /// Verify signatures for authorized public keys
+
+    /// Verify that at least `requiredSigs` distinct authorized keys signed the secret.
+    /// Signature/pubkey pairing is by validity, not by array position (NUT-11 k-of-n).
     private static func verifySignatures(
-        secret: WellKnownSecret,
+        message: String,
         witness: HTLCWitness,
-        pubkeys: [String]
-    ) throws -> Bool {
-        // Check if we need all signatures (n-of-n) or any signature (1-of-n)
-        let requireAllSignatures = secret.secretData.tags?.contains(where: { $0.first == "n_sigs" }) ?? false
-        
-        if requireAllSignatures {
-            // Verify all pubkeys have signed
-            guard witness.signatures.count == pubkeys.count else {
-                return false
-            }
-            
-            for (index, pubkey) in pubkeys.enumerated() {
-                guard index < witness.signatures.count else { return false }
-                
-                let signature = witness.signatures[index]
-                let verified = P2PKSignatureValidator.validateSignature(
+        pubkeys: [String],
+        requiredSigs: Int
+    ) -> Bool {
+        var creditedSigners = Set<String>()
+        var consumedSignatures = Set<Int>()
+
+        for pubkey in pubkeys where !creditedSigners.contains(pubkey) {
+            for (index, signature) in witness.signatures.enumerated() where !consumedSignatures.contains(index) {
+                if P2PKSignatureValidator.validateSignature(
                     signature: signature,
                     publicKey: pubkey,
-                    message: secret.secretData.nonce
-                )
-                
-                if !verified {
-                    return false
+                    message: message
+                ) {
+                    creditedSigners.insert(pubkey)
+                    consumedSignatures.insert(index)
+                    break
                 }
             }
-            
-            return true
-        } else {
-            // Verify at least one valid signature
-            for signature in witness.signatures {
-                for pubkey in pubkeys {
-                    let verified = P2PKSignatureValidator.validateSignature(
-                        signature: signature,
-                        publicKey: pubkey,
-                        message: secret.secretData.nonce
-                    )
-                    if verified {
-                        return true
-                    }
-                }
-            }
-            
-            return false
         }
+
+        return creditedSigners.count >= requiredSigs
     }
-    
+
     /// Verify refund signature
     private static func verifyRefundSignature(
-        secret: WellKnownSecret,
+        message: String,
         witness: HTLCWitness,
         refundKey: String
-    ) throws -> Bool {
+    ) -> Bool {
         // For refund, we need at least one valid signature from the refund key
         for signature in witness.signatures {
             let verified = P2PKSignatureValidator.validateSignature(
                 signature: signature,
                 publicKey: refundKey,
-                message: secret.secretData.nonce
+                message: message
             )
-            
+
             if verified {
                 return true
             }
         }
-        
+
         return false
     }
 }
@@ -364,8 +364,9 @@ public struct HTLCCreator: Sendable {
             tags.append(["refund", refundKey])
         }
         
-        // Add signature flag if not default
-        if sigflag != .sigAll {
+        // NUT-11: an absent sigflag tag means SIG_INPUTS, so SIG_ALL must always be
+        // written explicitly — omitting it silently weakened the lock to SIG_INPUTS.
+        if sigflag != .sigInputs {
             tags.append(["sigflag", sigflag.rawValue])
         }
         

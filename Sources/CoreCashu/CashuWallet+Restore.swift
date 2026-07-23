@@ -88,25 +88,28 @@ public extension CashuWallet {
         guard let derivation = deterministicDerivation else {
             throw CashuError.walletNotInitializedWithMnemonic
         }
-        
+
         guard isReady else {
             throw CashuError.walletNotInitialized
         }
-        
+
+        guard batchSize > 0 else {
+            throw CashuError.invalidAmount
+        }
+
         let restoration = WalletRestoration(
             derivation: derivation,
             counterManager: keysetCounterManager
         )
-        
+
         var totalRestoredBalance = 0
         var restorationErrors: [String: any Error] = [:]
-        
-        // Restore for each active keyset
-        for (keysetID, _) in currentKeysets {
-            guard currentKeysetInfos[keysetID]?.active ?? false else {
-                continue
-            }
-            
+
+        // Restore across ALL keysets the mint knows, active or not — long-lived funds sit
+        // precisely under rotated-out keysets. `currentKeysetInfos` is populated from
+        // /v1/keysets, which includes inactive entries.
+        let keysetIDs = Array(currentKeysetInfos.keys)
+        for keysetID in keysetIDs {
             do {
                 let balance = try await restoreKeyset(
                     keysetID: keysetID,
@@ -118,7 +121,7 @@ public extension CashuWallet {
             } catch {
                 // Store error but continue with other keysets
                 restorationErrors[keysetID] = error
-                
+
                 // Report error in progress
                 if let onProgress = onProgress {
                     let progress = RestorationProgress(
@@ -134,19 +137,25 @@ public extension CashuWallet {
                 }
             }
         }
-        
-        // If all keysets failed, throw the first error
-        if restorationErrors.count == currentKeysets.count,
+
+        // If every attempted keyset failed, surface the first error. Partial failures are
+        // reported through `onProgress` and logged; the restore stays re-runnable because
+        // already-stored proofs are skipped on the next pass.
+        if !keysetIDs.isEmpty, restorationErrors.count == keysetIDs.count,
            let firstError = restorationErrors.values.first {
             throw firstError
         }
-        
+
+        if !restorationErrors.isEmpty {
+            logger.warning("Restore completed with \(restorationErrors.count)/\(keysetIDs.count) keysets failing: \(restorationErrors.keys.sorted().joined(separator: ", "))")
+        }
+
         return totalRestoredBalance
     }
-    
+
     /// Get current keyset counters
-    func getKeysetCounters() async -> [String: UInt32] {
-        return await keysetCounterManager.getAllCounters()
+    func getKeysetCounters() async throws -> [String: UInt32] {
+        return try await keysetCounterManager.getAllCounters()
     }
 }
 
@@ -164,10 +173,20 @@ extension CashuWallet {
         let maxEmptyBatches = RestorationConstants.maxEmptyBatches
         var totalRestoredBalance = 0
         var consecutiveEmptyBatches = 0
-        var currentCounter = await keysetCounterManager.getCounter(for: keysetID)
+        var currentCounter = try await keysetCounterManager.getCounter(for: keysetID)
+        let scanStartCounter = currentCounter
         var totalProofsFound = 0
         var unspentProofsFound = 0
-        
+        // Highest counter index the mint actually recognized — the basis for the final
+        // counter value (never a batch-arithmetic estimate).
+        var highestSignedCounter: UInt32?
+
+        let mintKeys = try await restorationKeys(for: keysetID)
+
+        // Snapshot of secrets already in storage so re-running a restore (e.g. after a
+        // partial failure) skips proofs from earlier passes instead of throwing.
+        var knownSecrets = Set(try await proofManager.getAllProofs().map { $0.secret })
+
         while consecutiveEmptyBatches < maxEmptyBatches {
             // Generate blinded messages for this batch
             let blindedMessagesWithFactors = try await restoration.generateBlindedMessages(
@@ -175,80 +194,89 @@ extension CashuWallet {
                 startCounter: currentCounter,
                 batchSize: batchSize
             )
-            
+
             let blindedMessages = blindedMessagesWithFactors.map { $0.0 }
             let blindingFactors = blindedMessagesWithFactors.map { $0.1 }
-            
+
             // Request signatures from mint using NUT-09
-            let blindedSignatures = try await requestRestore(
+            let response = try await requestRestore(
                 blindedMessages: blindedMessages,
                 keysetID: keysetID
             )
-            
-            if blindedSignatures.isEmpty {
+
+            if response.signatures.isEmpty {
                 consecutiveEmptyBatches += 1
             } else {
                 consecutiveEmptyBatches = 0
-                
-                // Generate secrets for unblinding
-                var secrets: [String] = []
-                for i in 0..<blindedSignatures.count {
-                    let secret = try restoration.derivation.deriveSecret(
-                        keysetID: keysetID,
-                        counter: currentCounter + UInt32(i)
-                    )
-                    secrets.append(secret)
-                }
-                
-                guard let keyset = currentKeysets[keysetID] else {
-                    throw CashuError.keysetNotFound
+
+                // NUT-09: the mint echoes the subset of `outputs` it recognized, aligned
+                // 1:1 with `signatures`. Each echoed output is matched back to its batch
+                // position by B_ so every signature is unblinded with the blinding factor
+                // and secret of the counter that actually produced it — positional pairing
+                // corrupts every proof after the first gap.
+                guard response.outputs.count == response.signatures.count else {
+                    throw CashuError.invalidResponse
                 }
 
-                // Restore proofs with amount-specific mint keys.
+                var batchIndexByB = [String: Int]()
+                for (index, message) in blindedMessages.enumerated() {
+                    batchIndexByB[message.B_] = index
+                }
+
                 var restoredProofs: [Proof] = []
-                for (index, blindedSignature) in blindedSignatures.enumerated() {
-                    guard index < blindingFactors.count, index < secrets.count else {
-                        throw CashuError.mismatchedArrayLengths
+                for (respIndex, signature) in response.signatures.enumerated() {
+                    guard let batchIndex = batchIndexByB[response.outputs[respIndex].B_] else {
+                        throw CashuError.invalidResponse
                     }
-                    guard let publicKeyHex = keyset.keys[String(blindedSignature.amount)],
+
+                    let counter = currentCounter + UInt32(batchIndex)
+                    highestSignedCounter = max(highestSignedCounter ?? 0, counter)
+
+                    let secret = try restoration.derivation.deriveSecret(
+                        keysetID: keysetID,
+                        counter: counter
+                    )
+
+                    guard let publicKeyHex = mintKeys[String(signature.amount)],
                           let publicKeyData = Data(hexString: publicKeyHex),
                           let mintPublicKey = try? P256K.KeyAgreement.PublicKey(dataRepresentation: publicKeyData, format: .compressed) else {
                         throw CashuError.keysetNotFound
                     }
 
                     let restored = try restoration.restoreProofs(
-                        blindedSignatures: [blindedSignature],
-                        blindingFactors: [blindingFactors[index]],
-                        secrets: [secrets[index]],
+                        blindedSignatures: [signature],
+                        blindingFactors: [blindingFactors[batchIndex]],
+                        secrets: [secret],
                         keysetID: keysetID,
                         mintPublicKey: mintPublicKey
                     )
                     restoredProofs.append(contentsOf: restored)
                 }
-                
+
                 // Check proof states
                 let stateResult = try await checkProofStates(restoredProofs)
-                
-                // Separate spent and unspent proofs
+
+                // Keep only unspent proofs that aren't already in storage
                 var unspentProofs: [Proof] = []
                 for result in stateResult.results {
-                    if result.stateInfo.state == .unspent {
+                    if result.stateInfo.state == .unspent, !knownSecrets.contains(result.proof.secret) {
                         unspentProofs.append(result.proof)
+                        knownSecrets.insert(result.proof.secret)
                     }
                 }
-                
+
                 // Add unspent proofs to wallet
                 if !unspentProofs.isEmpty {
                     try await proofManager.addProofs(unspentProofs)
                     totalRestoredBalance += unspentProofs.reduce(0) { $0 + $1.amount }
                     unspentProofsFound += unspentProofs.count
                 }
-                
+
                 totalProofsFound += restoredProofs.count
             }
-            
+
             currentCounter += UInt32(batchSize)
-            
+
             // Report progress
             if let onProgress = onProgress {
                 let progress = RestorationProgress(
@@ -262,13 +290,20 @@ extension CashuWallet {
                 await onProgress(progress)
             }
         }
-        
-        // Update counter for this keyset
-        // Use safe arithmetic to prevent underflow
-        let batchAdjustment = min(currentCounter, UInt32(maxEmptyBatches * batchSize))
-        let finalCounter = currentCounter - batchAdjustment + UInt32(totalProofsFound)
-        await keysetCounterManager.setCounter(for: keysetID, value: finalCounter + 1)
-        
+
+        // The next usable counter is one past the highest index the mint signed. When the
+        // scan found nothing, the counter stays where the scan started — it must never
+        // move backwards or drift forward past unused indices.
+        let finalCounter: UInt32
+        if let highestSignedCounter {
+            finalCounter = highestSignedCounter + 1
+        } else {
+            finalCounter = scanStartCounter
+        }
+        if finalCounter > scanStartCounter {
+            try await keysetCounterManager.setCounter(for: keysetID, value: finalCounter)
+        }
+
         // Report completion for this keyset
         if let onProgress = onProgress {
             let progress = RestorationProgress(
@@ -281,15 +316,34 @@ extension CashuWallet {
             )
             await onProgress(progress)
         }
-        
+
         return totalRestoredBalance
     }
-    
-    /// Request restore from mint (NUT-09)
+
+    /// Resolve the amount→pubkey map for a keyset, falling back to a per-keyset key fetch
+    /// for keysets (typically inactive ones) that aren't in the wallet's active-key cache.
+    private func restorationKeys(for keysetID: String) async throws -> [String: String] {
+        if let keyset = currentKeysets[keysetID] {
+            return keyset.keys
+        }
+
+        guard let keyExchangeService = keyExchangeService else {
+            throw CashuError.walletNotInitialized
+        }
+
+        let response = try await keyExchangeService.getKeys(from: configuration.mintURL, keysetID: keysetID)
+        guard let keyset = response.keysets.first(where: { $0.id == keysetID }) else {
+            throw CashuError.keysetNotFound
+        }
+        return keyset.keys
+    }
+
+    /// Request restore from mint (NUT-09). Returns the full response — `outputs` is
+    /// required to align each signature with the counter that produced it.
     internal func requestRestore(
         blindedMessages: [BlindedMessage],
         keysetID: String
-    ) async throws -> [BlindSignature] {
+    ) async throws -> PostRestoreResponse {
         // Check if mint supports NUT-09
         guard currentMintInfo?.isNUTSupported("9") ?? false else {
             if let capabilityManager = capabilityManager {
@@ -301,15 +355,12 @@ extension CashuWallet {
                 throw CashuError.unsupportedOperation("Restore functionality (NUT-09) is not supported by this mint")
             }
         }
-        
+
         // Create restore service
         let restoreService = await RestoreSignatureService(networking: networking)
-        
+
         // Request restore from mint
         let request = PostRestoreRequest(outputs: blindedMessages)
-        let response = try await restoreService.restoreSignatures(request: request, mintURL: configuration.mintURL)
-        
-        // Extract signatures from response
-        return response.signatures
+        return try await restoreService.restoreSignatures(request: request, mintURL: configuration.mintURL)
     }
 }

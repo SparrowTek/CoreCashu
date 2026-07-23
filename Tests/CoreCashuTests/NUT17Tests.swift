@@ -35,10 +35,12 @@ struct NUT17Tests {
         #expect(request.method == .subscribe)
         #expect(request.id == 1)
         
-        // Decode params to verify
-        let paramsData = request.params.data(using: .utf8)!
-        let params = try JSONDecoder().decode(WsSubscribeParams.self, from: paramsData)
-        
+        // Verify the typed params directly
+        guard case .subscribe(let params) = request.params else {
+            Issue.record("Expected subscribe params")
+            return
+        }
+
         #expect(params.kind == .proofState)
         #expect(params.subId == "test-sub-id")
         #expect(params.filters == ["filter1", "filter2"])
@@ -55,10 +57,12 @@ struct NUT17Tests {
         #expect(request.method == .unsubscribe)
         #expect(request.id == 2)
         
-        // Decode params to verify
-        let paramsData = request.params.data(using: .utf8)!
-        let params = try JSONDecoder().decode(WsUnsubscribeParams.self, from: paramsData)
-        
+        // Verify the typed params directly
+        guard case .unsubscribe(let params) = request.params else {
+            Issue.record("Expected unsubscribe params")
+            return
+        }
+
         #expect(params.subId == "test-sub-id")
     }
     
@@ -251,18 +255,26 @@ struct NUT17Tests {
     @Test("JSON-RPC serialization")
     func testJSONRPCSerialization() throws {
         // Test request serialization
-        let request = WsRequest(
-            method: .subscribe,
-            params: "{\"kind\":\"proof_state\",\"subId\":\"123\",\"filters\":[]}",
+        let request = try WsRequest.subscribe(
+            kind: .proofState,
+            subId: "123",
+            filters: [],
             id: 1
         )
-        
+
         let requestData = try JSONEncoder().encode(request)
         let requestJSON = String(data: requestData, encoding: .utf8)!
-        
+
         #expect(requestJSON.contains("\"jsonrpc\":\"2.0\""))
         #expect(requestJSON.contains("\"method\":\"subscribe\""))
         #expect(requestJSON.contains("\"id\":1"))
+
+        // NUT-17: `params` must be a JSON object on the wire, not a stringified blob.
+        let parsed = try JSONSerialization.jsonObject(with: requestData) as? [String: Any]
+        let params = parsed?["params"] as? [String: Any]
+        #expect(params?["kind"] as? String == "proof_state")
+        #expect(params?["subId"] as? String == "123")
+        #expect(params?["filters"] as? [String] == [])
         
         // Test response serialization
         let response = WsResponse(

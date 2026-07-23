@@ -28,7 +28,7 @@ struct NUT14Tests {
         
         // Verify preimage matches hash
         let witness = HTLCWitness(preimage: preimage.hexString, signatures: [])
-        let verified = try HTLCVerifier.verifyPreimage(
+        let verified = HTLCVerifier.verifyPreimage(
             preimage: witness.preimage,
             hashLock: hashHex
         )

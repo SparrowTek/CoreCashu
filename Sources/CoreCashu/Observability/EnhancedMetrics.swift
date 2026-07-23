@@ -152,6 +152,11 @@ import Foundation
 
         let key = metricKey(name: name, tags: tags)
         histograms[key, default: []].append(value)
+        // Bound per-key observations: long-running processes must not grow memory
+        // linearly with request count. Keep the most recent window.
+        if histograms[key, default: []].count > 4096 {
+            histograms[key]?.removeFirst(histograms[key, default: []].count - 4096)
+        }
 
         let metric = MetricDataPoint(
             name: name,

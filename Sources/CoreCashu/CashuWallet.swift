@@ -192,6 +192,12 @@ public actor CashuWallet {
     // NUT-13: Deterministic secrets
     internal var deterministicDerivation: DeterministicSecretDerivation?
     internal let keysetCounterManager: KeysetCounterManager
+
+    // Melts whose Lightning payment is (or may be) in flight: quote ID → preparation.
+    // Input proofs for these stay pending-spent until the quote state resolves via
+    // ``resolvePendingMelt(quoteID:method:)``. In-memory only — after a crash, recover
+    // via checkProofStates/restoreFromSeed.
+    internal var pendingMeltPreparations: [String: MeltPreparation] = [:]
     
     // Security: Secure storage
     internal let secureStore: (any SecureStore)?
@@ -228,8 +234,12 @@ public actor CashuWallet {
         self.proofManager = ProofManager(storage: proofStorage ?? InMemoryProofStorage())
         let resolvedNetworking: any Networking = networking ?? URLSession.shared
         self.mintInfoService = await MintInfoService(networking: resolvedNetworking)
-        self.keysetCounterManager = KeysetCounterManager()
-        
+        // NUT-13 counters back onto the injected storage (write-ahead persistence).
+        // Without persistent storage, counters reset every launch and deterministic
+        // outputs get re-derived — pass `counterStorage` in any wallet that lives
+        // beyond a single process.
+        self.keysetCounterManager = KeysetCounterManager(storage: counterStorage)
+
         #if canImport(Security) && !os(Linux)
         if let secureStore {
             self.secureStore = secureStore
@@ -301,7 +311,9 @@ public actor CashuWallet {
         self.proofManager = ProofManager(storage: proofStorage ?? InMemoryProofStorage())
         let resolvedNetworking: any Networking = networking ?? URLSession.shared
         self.mintInfoService = await MintInfoService(networking: resolvedNetworking)
-        self.keysetCounterManager = KeysetCounterManager()
+        // Persistent counters matter most here: a mnemonic wallet re-derives the same
+        // secrets after relaunch if its counters reset (see KeysetCounterManager docs).
+        self.keysetCounterManager = KeysetCounterManager(storage: counterStorage)
 
         #if canImport(Security) && !os(Linux)
         if let secureStore {
@@ -405,7 +417,13 @@ public actor CashuWallet {
     
     /// Initialize the wallet (fetch mint info and keysets)
     public func initialize() async throws {
-        guard case .uninitialized = walletState else {
+        // A failed initialization (network blip at startup) must be retryable — without
+        // the .error branch here, one transient failure permanently bricks the wallet:
+        // re-initializing threw and the only reset path (clearAll) deletes the proofs.
+        switch walletState {
+        case .uninitialized, .error:
+            break
+        default:
             logger.warning("Attempted to initialize already initialized wallet")
             throw CashuError.walletAlreadyInitialized
         }
@@ -725,7 +743,7 @@ public actor CashuWallet {
             throw CashuError.walletNotInitialized
         }
         let keyResponse = try await keyExchangeService.getKeys(from: configuration.mintURL)
-        return Dictionary(uniqueKeysWithValues: keyResponse.keysets.flatMap { keyset in
+        return Dictionary(keyResponse.keysets.flatMap { keyset in
             keyset.keys.compactMap { (amountStr, publicKeyHex) -> (String, P256K.KeyAgreement.PublicKey)? in
                 guard let amount = Int(amountStr),
                       let publicKeyData = Data(hexString: publicKeyHex),
@@ -734,7 +752,7 @@ public actor CashuWallet {
                 }
                 return ("\(keyset.id)_\(amount)", publicKey)
             }
-        })
+        }, uniquingKeysWith: { first, _ in first })
     }
     
     // MARK: - Private Methods
@@ -793,7 +811,7 @@ public actor CashuWallet {
 
         // Refresh keyset metadata first so restore/access-token flows can rely on active flags.
         let keysetInfoResponse = try await keysetManagementService.getKeysets(from: configuration.mintURL)
-        currentKeysetInfos = Dictionary(uniqueKeysWithValues: keysetInfoResponse.keysets.map { ($0.id, $0) })
+        currentKeysetInfos = Dictionary(keysetInfoResponse.keysets.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
 
         let keysets = try await keyExchangeService.getActiveKeys(
             from: configuration.mintURL, 
@@ -855,7 +873,7 @@ public actor CashuWallet {
             throw CashuError.walletNotInitialized
         }
         let keyResponse = try await keyExchangeService.getKeys(from: configuration.mintURL)
-        let mintKeys = Dictionary(uniqueKeysWithValues: keyResponse.keysets.flatMap { keyset in
+        let mintKeys = Dictionary(keyResponse.keysets.flatMap { keyset in
             keyset.keys.compactMap { (amountStr, publicKeyHex) -> (String, P256K.KeyAgreement.PublicKey)? in
                 guard let amount = Int(amountStr),
                       let publicKeyData = Data(hexString: publicKeyHex),
@@ -864,7 +882,7 @@ public actor CashuWallet {
                 }
                 return ("\(keyset.id)_\(amount)", publicKey)
             }
-        })
+        }, uniquingKeysWith: { first, _ in first })
         
         guard signatures.count == blindingData.count else {
             throw CashuError.invalidResponse

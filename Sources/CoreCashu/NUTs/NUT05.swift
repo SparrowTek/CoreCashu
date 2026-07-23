@@ -74,7 +74,12 @@ public struct PostMeltQuoteResponse: CashuCodabale {
     public let state: MeltQuoteState
     public let expiry: Int
     public let feeReserve: Int?
-    
+    /// Lightning payment preimage — proof of payment, present once the quote is PAID (NUT-23).
+    public let paymentPreimage: String?
+    /// NUT-08 change signatures. Mints include these on the quote once it is PAID, which
+    /// lets a wallet that lost the melt response recover its change by re-checking the quote.
+    public let change: [BlindSignature]?
+
     private enum CodingKeys: String, CodingKey {
         case quote
         case amount
@@ -82,15 +87,19 @@ public struct PostMeltQuoteResponse: CashuCodabale {
         case state
         case expiry
         case feeReserve = "fee_reserve"
+        case paymentPreimage = "payment_preimage"
+        case change
     }
-    
-    public init(quote: String, amount: Int, unit: String, state: MeltQuoteState, expiry: Int, feeReserve: Int? = nil) {
+
+    public init(quote: String, amount: Int, unit: String, state: MeltQuoteState, expiry: Int, feeReserve: Int? = nil, paymentPreimage: String? = nil, change: [BlindSignature]? = nil) {
         self.quote = quote
         self.amount = amount
         self.unit = unit
         self.state = state
         self.expiry = expiry
         self.feeReserve = feeReserve
+        self.paymentPreimage = paymentPreimage
+        self.change = change
     }
     
     /// Validate the melt quote response structure
@@ -190,10 +199,19 @@ public struct PostMeltRequest: CashuCodabale {
 public struct PostMeltResponse: CashuCodabale {
     public let state: MeltQuoteState
     public let change: [BlindSignature]?
-    
-    public init(state: MeltQuoteState, change: [BlindSignature]? = nil) {
+    /// Lightning payment preimage — proof of payment, present on successful payment (NUT-23).
+    public let paymentPreimage: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case state
+        case change
+        case paymentPreimage = "payment_preimage"
+    }
+
+    public init(state: MeltQuoteState, change: [BlindSignature]? = nil, paymentPreimage: String? = nil) {
         self.state = state
         self.change = change
+        self.paymentPreimage = paymentPreimage
     }
     
     /// Validate the melt response structure
@@ -495,7 +513,8 @@ public struct MeltService: Sendable {
         method: PaymentMethod,
         unit: String,
         availableProofs: [Proof],
-        at mintURL: String
+        at mintURL: String,
+        deterministicOutputs: DeterministicOutputProvider? = nil
     ) async throws -> MeltPreparation {
         // Request quote first
         let quote = try await requestMeltQuote(
@@ -504,47 +523,59 @@ public struct MeltService: Sendable {
             unit: unit,
             at: mintURL
         )
-        
+
         // Get keyset information for fee calculation
         let keysetResponse = try await keysetManagementService.getKeysets(from: mintURL)
-        let keysetDict = Dictionary(uniqueKeysWithValues: keysetResponse.keysets.map { ($0.id, $0) })
-        
-        // Select optimal proofs for the required amount
-        let selectionResult = try await keysetManagementService.calculateOptimalProofSelection(
-            availableProofs: availableProofs,
-            targetAmount: quote.amount,
-            from: mintURL
-        )
-        
-        guard let selection = selectionResult.recommended else {
+        let keysetDict = Dictionary(keysetResponse.keysets.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+
+        // Inputs must cover amount + fee_reserve + input fees (NUT-05). Input fees depend
+        // on which proofs get selected, so re-select with fees folded into the target until
+        // the selection covers them. Fees grow monotonically with proof count, so this
+        // converges; bail out as insufficient if it hasn't within a few rounds.
+        let feeReserve = quote.feeReserve ?? 0
+        var target = quote.amount + feeReserve
+        var selection: ProofSelectionOption?
+        var fees = 0
+        for _ in 0..<8 {
+            let selectionResult = try await keysetManagementService.calculateOptimalProofSelection(
+                availableProofs: availableProofs,
+                targetAmount: target,
+                from: mintURL
+            )
+            guard let candidate = selectionResult.recommended else {
+                throw CashuError.insufficientFunds
+            }
+            fees = FeeCalculator.calculateFees(for: candidate.selectedProofs, keysetInfo: keysetDict)
+            if candidate.totalAmount >= quote.amount + feeReserve + fees {
+                selection = candidate
+                break
+            }
+            target = quote.amount + feeReserve + fees
+        }
+
+        guard let selection else {
             throw CashuError.insufficientFunds
         }
-        
-        // Calculate fees
-        let fees = FeeCalculator.calculateFees(for: selection.selectedProofs, keysetInfo: keysetDict)
+
         let totalInput = selection.totalAmount
-        let requiredAmount = quote.amount + fees
-        
-        guard totalInput >= requiredAmount else {
-            throw CashuError.insufficientFunds
-        }
-        
-        let changeAmount = totalInput - requiredAmount
-        
-        // Create change outputs if needed
+        let requiredAmount = quote.amount + feeReserve + fees
+
+        // NUT-08 blank outputs, sized for the maximum the mint could return: the unspent
+        // fee reserve plus any selection overshoot. The mint imprints actual amounts after
+        // the payment settles, so these are "blank" — amount 1 by convention.
+        let maxReturnable = totalInput - quote.amount - fees
         var blindedMessages: [BlindedMessage]?
         var blindingData: [WalletBlindingData]?
-        
-        if changeAmount > 0 {
-            // Create optimal denominations for change
-            let changeAmounts = createOptimalDenominations(for: changeAmount)
-            
+
+        if maxReturnable > 0 {
+            let blankCount = FeeReturnCalculator.calculateBlankOutputCount(feeReserve: maxReturnable)
+
             // Get active keyset for outputs
             let activeKeysets = try await keysetManagementService.getActiveKeysets(from: mintURL)
-            
+
             // Filter keysets by unit
             let unitKeysets = activeKeysets.filter { $0.unit == unit }
-            
+
             guard let activeKeyset = unitKeysets.first else {
                 // Provide more specific error based on whether any keysets exist
                 if activeKeysets.isEmpty {
@@ -553,35 +584,35 @@ public struct MeltService: Sendable {
                     throw CashuError.keysetInactive
                 }
             }
-            
-            // Create blinded messages for change
-            var messages: [BlindedMessage] = []
-            var blindings: [WalletBlindingData] = []
-            
-            for amount in changeAmounts {
-                let secret = try CashuKeyUtils.generateRandomSecret()
-                let walletBlindingData = try WalletBlindingData(secret: secret)
-                let blindedMessage = BlindedMessage(
-                    amount: amount,
-                    id: activeKeyset.id,
-                    B_: walletBlindingData.blindedMessage.dataRepresentation.hexString
-                )
-                
-                messages.append(blindedMessage)
-                blindings.append(walletBlindingData)
+
+            // Deterministic (NUT-13) blank outputs when the wallet has a seed, so change
+            // from an interrupted melt remains recoverable via restore; random otherwise.
+            let blindings: [WalletBlindingData]
+            if let deterministicOutputs {
+                blindings = try await deterministicOutputs.makeBlindingData(count: blankCount, for: activeKeyset.id)
+            } else {
+                blindings = try (0..<blankCount).map { _ in
+                    try WalletBlindingData(secret: CashuKeyUtils.generateRandomSecret())
+                }
             }
-            
-            blindedMessages = messages
+
+            blindedMessages = blindings.map {
+                BlindedMessage(
+                    amount: 1,
+                    id: activeKeyset.id,
+                    B_: $0.blindedMessage.dataRepresentation.hexString
+                )
+            }
             blindingData = blindings
         }
-        
+
         return MeltPreparation(
             quote: quote,
             inputProofs: selection.selectedProofs,
             blindedMessages: blindedMessages,
             blindingData: blindingData,
             requiredAmount: requiredAmount,
-            changeAmount: changeAmount,
+            changeAmount: maxReturnable,
             fees: fees
         )
     }
@@ -597,34 +628,64 @@ public struct MeltService: Sendable {
         method: PaymentMethod,
         at mintURL: String
     ) async throws -> MeltResult {
-        // Create melt request
+        // Create melt request. The prepared blank outputs (NUT-08) ride along so the mint
+        // can return the unspent fee reserve and any input overshoot as change.
         let request = PostMeltRequest(
             quote: preparation.quote.quote,
-            inputs: preparation.inputProofs
+            inputs: preparation.inputProofs,
+            outputs: preparation.blindedMessages
         )
-        
+
         // Execute melt
         let response = try await executeMelt(request, method: method, at: mintURL)
-        
+
         // Validate response
         guard response.validate() else {
             throw CashuError.invalidResponse
         }
-        
+
         // Unblind change if present
         var changeProofs: [Proof] = []
-        
+
         if let changeSignatures = response.change,
-           let _ = preparation.blindedMessages,
+           !changeSignatures.isEmpty,
            let blindingData = preparation.blindingData {
-            
-            guard changeSignatures.count == blindingData.count else {
-                throw CashuError.invalidResponse
-            }
-            
-            // Get mint public keys for unblinding
-            let keyResponse = try await keyExchangeService.getKeys(from: mintURL)
-            let mintKeys = Dictionary(uniqueKeysWithValues: keyResponse.keysets.flatMap { keyset in
+            changeProofs = try await unblindMeltChange(
+                changeSignatures,
+                blindingData: blindingData,
+                at: mintURL
+            )
+        }
+
+        return MeltResult(
+            state: response.state,
+            changeProofs: changeProofs,
+            spentProofs: preparation.inputProofs,
+            meltType: .payment,
+            totalAmount: preparation.inputProofs.reduce(0) { $0 + $1.amount },
+            fees: preparation.fees,
+            paymentProof: response.paymentPreimage.map { Data(hexString: $0) ?? Data($0.utf8) }
+        )
+    }
+
+    /// Unblind NUT-08 change signatures against the blank outputs' blinding data.
+    ///
+    /// Per NUT-08 the mint returns signatures for the non-zero change amounts in the same
+    /// order as the blank outputs were sent, omitting zero-valued ones — fewer signatures
+    /// than blank outputs is normal; more is a protocol violation.
+    public func unblindMeltChange(
+        _ changeSignatures: [BlindSignature],
+        blindingData: [WalletBlindingData],
+        at mintURL: String
+    ) async throws -> [Proof] {
+        guard changeSignatures.count <= blindingData.count else {
+            throw CashuError.invalidResponse
+        }
+
+        // Get mint public keys for unblinding
+        let keyResponse = try await keyExchangeService.getKeys(from: mintURL)
+        let mintKeys = Dictionary(
+            keyResponse.keysets.flatMap { keyset in
                 keyset.keys.compactMap { (amountStr, publicKeyHex) -> (String, P256K.KeyAgreement.PublicKey)? in
                     guard let amount = Int(amountStr),
                           let publicKeyData = Data(hexString: publicKeyHex),
@@ -633,46 +694,38 @@ public struct MeltService: Sendable {
                     }
                     return ("\(keyset.id)_\(amount)", publicKey)
                 }
-            })
-            
-            // Unblind signatures to create change proofs
-            for (index, signature) in changeSignatures.enumerated() {
-                let blindingDataItem = blindingData[index]
-                let mintKeyKey = "\(signature.id)_\(signature.amount)"
-                
-                guard let mintPublicKey = mintKeys[mintKeyKey] else {
-                    throw CashuError.invalidSignature("Mint public key not found for amount \(signature.amount)")
-                }
-                
-                guard let blindedSignatureData = Data(hexString: signature.C_) else {
-                    throw CashuError.invalidHexString
-                }
-                
-                let unblindedToken = try Wallet.unblindSignature(
-                    blindedSignature: blindedSignatureData,
-                    blindingData: blindingDataItem,
-                    mintPublicKey: mintPublicKey
-                )
-                
-                let proof = Proof(
-                    amount: signature.amount,
-                    id: signature.id,
-                    secret: unblindedToken.secret,
-                    C: unblindedToken.signature.hexString
-                )
-                
-                changeProofs.append(proof)
-            }
-        }
-        
-        return MeltResult(
-            state: response.state,
-            changeProofs: changeProofs,
-            spentProofs: preparation.inputProofs,
-            meltType: .payment,
-            totalAmount: preparation.inputProofs.reduce(0) { $0 + $1.amount },
-            fees: preparation.fees
+            },
+            uniquingKeysWith: { first, _ in first }
         )
+
+        var changeProofs: [Proof] = []
+        for (index, signature) in changeSignatures.enumerated() {
+            let blindingDataItem = blindingData[index]
+            let mintKeyKey = "\(signature.id)_\(signature.amount)"
+
+            guard let mintPublicKey = mintKeys[mintKeyKey] else {
+                throw CashuError.invalidSignature("Mint public key not found for amount \(signature.amount)")
+            }
+
+            guard let blindedSignatureData = Data(hexString: signature.C_) else {
+                throw CashuError.invalidHexString
+            }
+
+            let unblindedToken = try Wallet.unblindSignature(
+                blindedSignature: blindedSignatureData,
+                blindingData: blindingDataItem,
+                mintPublicKey: mintPublicKey
+            )
+
+            changeProofs.append(Proof(
+                amount: signature.amount,
+                id: signature.id,
+                secret: unblindedToken.secret,
+                C: unblindedToken.signature.hexString
+            ))
+        }
+
+        return changeProofs
     }
     
     /// Simple melt operation for external payments
@@ -731,92 +784,76 @@ public struct MeltService: Sendable {
             unit: unit,
             at: mintURL
         )
-        
-        // Calculate blank outputs needed
+
         let feeReserve = quote.feeReserve ?? 0
-        let blankOutputCount = FeeReturnCalculator.calculateBlankOutputCount(feeReserve: feeReserve)
-        
-        // Use configuration if provided or get active keyset
+
+        // Resolve the keyset for the blank outputs: explicit configuration wins, otherwise
+        // the active keyset for the requested unit.
         let keysetID: String
         if let configuration = configuration {
             keysetID = configuration.keysetID
         } else {
             let activeKeysets = try await keysetManagementService.getActiveKeysets(from: mintURL)
-            keysetID = activeKeysets.first?.id ?? ""
+            let unitKeysets = activeKeysets.filter { $0.unit == unit }
+            guard let activeKeyset = unitKeysets.first else {
+                throw activeKeysets.isEmpty ? CashuError.noActiveKeyset : CashuError.keysetInactive
+            }
+            keysetID = activeKeyset.id
         }
-        
-        // Generate blank outputs
+
+        // Get keyset information for fee calculation
+        let keysetResponse = try await keysetManagementService.getKeysets(from: mintURL)
+        let keysetDict = Dictionary(keysetResponse.keysets.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+
+        // Fee-aware selection: inputs must cover amount + fee_reserve + input fees.
+        var target = quote.amount + feeReserve
+        var selection: ProofSelectionOption?
+        var fees = 0
+        for _ in 0..<8 {
+            let selectionResult = try await keysetManagementService.calculateOptimalProofSelection(
+                availableProofs: availableProofs,
+                targetAmount: target,
+                from: mintURL
+            )
+            guard let candidate = selectionResult.recommended else {
+                throw CashuError.insufficientFunds
+            }
+            fees = FeeCalculator.calculateFees(for: candidate.selectedProofs, keysetInfo: keysetDict)
+            if candidate.totalAmount >= quote.amount + feeReserve + fees {
+                selection = candidate
+                break
+            }
+            target = quote.amount + feeReserve + fees
+        }
+
+        guard let selection else {
+            throw CashuError.insufficientFunds
+        }
+
+        let totalInput = selection.totalAmount
+        let requiredAmount = quote.amount + feeReserve + fees
+
+        // Blank outputs sized for everything the mint could hand back: unspent fee reserve
+        // plus selection overshoot (NUT-08 change covers input_amount − amount − actual fee).
+        let maxReturnable = totalInput - quote.amount - fees
+        let blankOutputCount = FeeReturnCalculator.calculateBlankOutputCount(feeReserve: maxReturnable)
         let blankOutputs = try await BlankOutputGenerator.generateBlankOutputs(
             count: blankOutputCount,
             keysetID: keysetID
         )
-        
-        // Get keyset information for fee calculation
-        let keysetResponse = try await keysetManagementService.getKeysets(from: mintURL)
-        let keysetDict = Dictionary(uniqueKeysWithValues: keysetResponse.keysets.map { ($0.id, $0) })
-        
-        // Select optimal proofs for the required amount (including fee reserve)
-        let totalRequired = quote.totalAmountWithFeeReserve
-        let selectionResult = try await keysetManagementService.calculateOptimalProofSelection(
-            availableProofs: availableProofs,
-            targetAmount: totalRequired,
-            from: mintURL
-        )
-        
-        guard let selection = selectionResult.recommended else {
-            throw CashuError.insufficientFunds
-        }
-        
-        // Calculate fees
-        let fees = FeeCalculator.calculateFees(for: selection.selectedProofs, keysetInfo: keysetDict)
-        let totalInput = selection.totalAmount
-        let requiredAmount = quote.amount + fees + feeReserve
-        
-        guard totalInput >= requiredAmount else {
-            throw CashuError.insufficientFunds
-        }
-        
-        let changeAmount = totalInput - requiredAmount
-        
-        // Create change outputs if needed (separate from blank outputs)
-        var blindedMessages: [BlindedMessage]?
-        var blindingData: [WalletBlindingData]?
-        
-        if changeAmount > 0 {
-            // Create optimal denominations for regular change
-            let changeAmounts = createOptimalDenominations(for: changeAmount)
-            
-            // Create blinded messages for change
-            var messages: [BlindedMessage] = []
-            var blindings: [WalletBlindingData] = []
-            
-            for amount in changeAmounts {
-                let secret = try CashuKeyUtils.generateRandomSecret()
-                let walletBlindingData = try WalletBlindingData(secret: secret)
-                let blindedMessage = BlindedMessage(
-                    amount: amount,
-                    id: keysetID,
-                    B_: walletBlindingData.blindedMessage.dataRepresentation.hexString
-                )
-                
-                messages.append(blindedMessage)
-                blindings.append(walletBlindingData)
-            }
-            
-            blindedMessages = messages
-            blindingData = blindings
-        }
-        
+
+        // The blank outputs are the only outputs this melt sends; their blinding data is
+        // what the mint's change signatures must be unblinded against.
         let preparation = MeltPreparation(
             quote: quote,
             inputProofs: selection.selectedProofs,
-            blindedMessages: blindedMessages,
-            blindingData: blindingData,
+            blindedMessages: blankOutputs.isEmpty ? nil : blankOutputs.map { $0.blindedMessage },
+            blindingData: blankOutputs.isEmpty ? nil : blankOutputs.map { $0.blindingData },
             requiredAmount: requiredAmount,
-            changeAmount: changeAmount,
+            changeAmount: maxReturnable,
             fees: fees
         )
-        
+
         return (preparation, blankOutputs)
     }
     
@@ -838,96 +875,52 @@ public struct MeltService: Sendable {
         let request = PostMeltRequest(
             quote: preparation.quote.quote,
             inputs: preparation.inputProofs,
-            outputs: blankOutputMessages
+            outputs: blankOutputMessages.isEmpty ? nil : blankOutputMessages
         )
-        
+
         // Execute melt
         let response = try await executeMelt(request, method: method, at: mintURL)
-        
+
         // Validate response
         guard response.validate() else {
             throw CashuError.invalidResponse
         }
-        
-        // Process regular change first
+
+        // The blank outputs are the only outputs the mint saw, so its change signatures
+        // must be unblinded against the blank outputs' blinding data — positionally, per
+        // NUT-08 (non-zero amounts in blank-output order, zero-valued ones omitted).
+        var feeReturnResult: FeeReturnResult?
         var changeProofs: [Proof] = []
-        
-        if let changeSignatures = response.change,
-           let _ = preparation.blindedMessages,
-           let blindingData = preparation.blindingData {
-            
+
+        if let changeSignatures = response.change, !changeSignatures.isEmpty {
+            guard changeSignatures.count <= blankOutputs.count else {
+                throw CashuError.invalidResponse
+            }
+
             // Get mint public keys for unblinding
             let keyResponse = try await keyExchangeService.getKeys(from: mintURL)
-            let mintKeys = Dictionary(uniqueKeysWithValues: keyResponse.keysets.flatMap { keyset in
-                keyset.keys.compactMap { (amountStr, publicKeyHex) -> (String, P256K.KeyAgreement.PublicKey)? in
-                    guard let amount = Int(amountStr),
-                          let publicKeyData = Data(hexString: publicKeyHex),
-                          let publicKey = try? P256K.KeyAgreement.PublicKey(dataRepresentation: publicKeyData, format: .compressed) else {
-                        return nil
+            let mintPublicKeyData = Dictionary(
+                keyResponse.keysets.flatMap { keyset in
+                    keyset.keys.compactMap { (amountStr, publicKeyHex) -> (String, Data)? in
+                        guard let amount = Int(amountStr),
+                              let publicKeyData = Data(hexString: publicKeyHex) else {
+                            return nil
+                        }
+                        return ("\(amount)", publicKeyData)
                     }
-                    return ("\(keyset.id)_\(amount)", publicKey)
-                }
-            })
-            
-            // Unblind signatures to create change proofs
-            for (index, signature) in changeSignatures.enumerated() {
-                let blindingDataItem = blindingData[index]
-                let mintKeyKey = "\(signature.id)_\(signature.amount)"
-                
-                guard let mintPublicKey = mintKeys[mintKeyKey] else {
-                    throw CashuError.invalidSignature("Mint public key not found for amount \(signature.amount)")
-                }
-                
-                guard let blindedSignatureData = Data(hexString: signature.C_) else {
-                    throw CashuError.invalidHexString
-                }
-                
-                let unblindedToken = try Wallet.unblindSignature(
-                    blindedSignature: blindedSignatureData,
-                    blindingData: blindingDataItem,
-                    mintPublicKey: mintPublicKey
-                )
-                
-                let proof = Proof(
-                    amount: signature.amount,
-                    id: signature.id,
-                    secret: unblindedToken.secret,
-                    C: unblindedToken.signature.hexString
-                )
-                
-                changeProofs.append(proof)
-            }
-        }
-        
-        // Process fee return if any change signatures were returned
-        var feeReturnResult: FeeReturnResult?
-        
-        if response.hasFeesReturned && !blankOutputs.isEmpty {
-            // Get mint public keys for unblinding fee returns
-            let keyResponse = try await keyExchangeService.getKeys(from: mintURL)
-            let mintPublicKeyData = Dictionary(uniqueKeysWithValues: keyResponse.keysets.flatMap { keyset in
-                keyset.keys.compactMap { (amountStr, publicKeyHex) -> (String, Data)? in
-                    guard let amount = Int(amountStr),
-                          let publicKeyData = Data(hexString: publicKeyHex) else {
-                        return nil
-                    }
-                    return ("\(amount)", publicKeyData)
-                }
-            })
-            
-            // Process fee return signatures
+                },
+                uniquingKeysWith: { first, _ in first }
+            )
+
             feeReturnResult = try BlankOutputGenerator.processChangeSignatures(
-                changeSignatures: response.change ?? [],
+                changeSignatures: changeSignatures,
                 blankOutputs: blankOutputs,
                 mintPublicKeys: mintPublicKeyData
             )
-            
-            // Add fee return proofs to change proofs
-            if let feeReturn = feeReturnResult {
-                changeProofs.append(contentsOf: feeReturn.returnedProofs)
-            }
+
+            changeProofs = feeReturnResult?.returnedProofs ?? []
         }
-        
+
         let meltResult = MeltResult(
             state: response.state,
             changeProofs: changeProofs,
@@ -935,9 +928,9 @@ public struct MeltService: Sendable {
             meltType: .payment,
             totalAmount: preparation.inputProofs.reduce(0) { $0 + $1.amount },
             fees: preparation.fees,
-            paymentProof: nil
+            paymentProof: response.paymentPreimage.map { Data(hexString: $0) ?? Data($0.utf8) }
         )
-        
+
         return (meltResult, feeReturnResult)
     }
     

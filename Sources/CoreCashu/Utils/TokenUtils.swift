@@ -96,32 +96,21 @@ public struct CashuTokenUtils {
     }
     
     // MARK: - V4 Token Serialization (Space-efficient CBOR format)
-    
-    /// V4 Token structure with shortened keys
-    private struct TokenV4: CashuCodabale {
-        let m: String // mint URL
-        let u: String // unit
-        let d: String? // memo (optional)
-        let t: [KeysetGroup] // token groups by keyset
-        
-        struct KeysetGroup: CashuCodabale {
-            let i: Data // keyset ID (as bytes)
-            let p: [ProofV4] // proofs for this keyset
-        }
-        
-        struct ProofV4: CashuCodabale {
-            let a: Int // amount
-            let s: String // secret
-            let c: Data // signature (as bytes)
-        }
-    }
-    
+
     /// Serialize a CashuToken to V4 format (CBOR-encoded)
     /// Format: cashuB[base64_token_cbor]
+    ///
+    /// The CBOR is built directly (never via a JSON intermediary): NUT-00 requires the
+    /// keyset ID `i`, signature `c`, and DLEQ scalars as CBOR **byte strings**, which JSON
+    /// cannot represent. DLEQ (`d`) and witness (`w`) fields are preserved.
     public static func serializeTokenV4(_ token: CashuToken, includeURI: Bool = false) throws -> String {
-        // Convert token to V4 structure
-        var keysetGroups: [TokenV4.KeysetGroup] = []
-        
+        // V4 tokens carry a single mint. Silently collapsing entries from different
+        // mints onto the first would fabricate unredeemable proofs.
+        let mints = Set(token.token.map { $0.mint })
+        guard mints.count == 1, let mint = mints.first, !mint.isEmpty else {
+            throw CashuError.serializationFailed
+        }
+
         // Group proofs by keyset ID
         var proofsByKeyset: [String: [Proof]] = [:]
         for entry in token.token {
@@ -129,104 +118,209 @@ public struct CashuTokenUtils {
                 proofsByKeyset[proof.id, default: []].append(proof)
             }
         }
-        
-        // Create keyset groups
+
+        var keysetGroups: [CBOR] = []
         for (keysetID, proofs) in proofsByKeyset {
             guard let keysetData = Data(hexString: keysetID) else {
                 throw CashuError.invalidKeysetID
             }
-            
-            let proofsV4 = proofs.map { proof in
-                TokenV4.ProofV4(
-                    a: proof.amount,
-                    s: proof.secret,
-                    c: Data(hexString: proof.C) ?? Data()
-                )
+
+            var proofsV4: [CBOR] = []
+            for proof in proofs {
+                guard let signatureData = Data(hexString: proof.C) else {
+                    throw CashuError.invalidHexString
+                }
+
+                guard proof.amount > 0 else {
+                    throw CashuError.invalidAmount
+                }
+
+                var proofMap: [CBOR: CBOR] = [
+                    "a": CBOR.unsignedInt(UInt64(proof.amount)),
+                    "s": CBOR.utf8String(proof.secret),
+                    "c": CBOR.byteString(signatureData.bytes),
+                ]
+                if let witness = proof.witness {
+                    proofMap["w"] = CBOR.utf8String(witness)
+                }
+                // NUT-00 V4 DLEQ requires all three scalars as bytes; a proof-side DLEQ
+                // without `r` cannot be represented and is omitted.
+                if let dleq = proof.dleq, let r = dleq.r {
+                    guard let e = Data(hexString: dleq.e),
+                          let s = Data(hexString: dleq.s),
+                          let rData = Data(hexString: r) else {
+                        throw CashuError.invalidHexString
+                    }
+                    proofMap["d"] = CBOR.map([
+                        "e": CBOR.byteString(e.bytes),
+                        "s": CBOR.byteString(s.bytes),
+                        "r": CBOR.byteString(rData.bytes),
+                    ])
+                }
+                proofsV4.append(CBOR.map(proofMap))
             }
-            
-            keysetGroups.append(TokenV4.KeysetGroup(i: keysetData, p: proofsV4))
+
+            keysetGroups.append(CBOR.map([
+                "i": CBOR.byteString(keysetData.bytes),
+                "p": CBOR.array(proofsV4),
+            ]))
         }
-        
-        // Create V4 token structure
-        let tokenV4 = TokenV4(
-            m: token.token.first?.mint ?? "",
-            u: token.unit ?? "sat",
-            d: token.memo,
-            t: keysetGroups
-        )
-        
-        // Convert to CBOR
-        let cborData = try encodeToCBOR(tokenV4)
-        
+
+        var tokenMap: [CBOR: CBOR] = [
+            "m": CBOR.utf8String(mint),
+            "u": CBOR.utf8String(token.unit ?? "sat"),
+            "t": CBOR.array(keysetGroups),
+        ]
+        if let memo = token.memo {
+            tokenMap["d"] = CBOR.utf8String(memo)
+        }
+
+        let cborData = Data(CBOR.map(tokenMap).encode())
+
         // Base64 URL-safe encode
         let base64Token = cborData.base64EncodedString()
             .replacingOccurrences(of: "+", with: "-")
             .replacingOccurrences(of: "/", with: "_")
             .replacingOccurrences(of: "=", with: "")
-        
+
         let serialized = "cashuB\(base64Token)"
         return includeURI ? "\(uriScheme)\(serialized)" : serialized
     }
-    
+
     /// Deserialize a V4 token from serialized format
     public static func deserializeTokenV4(_ serializedToken: String) throws -> CashuToken {
         var token = serializedToken
-        
+
         // Remove URI scheme if present
         if token.hasPrefix(uriScheme) {
             token = String(token.dropFirst(uriScheme.count))
         }
-        
+
         // Check and remove V4 prefix
         guard token.hasPrefix("cashuB") else {
             throw CashuError.invalidTokenFormat
         }
         token = String(token.dropFirst(6))
-        
+
         // Base64 URL-safe decode
         var base64 = token
             .replacingOccurrences(of: "-", with: "+")
             .replacingOccurrences(of: "_", with: "/")
-        
+
         // Add padding if needed
         while base64.count % 4 != 0 {
             base64.append("=")
         }
-        
+
         guard let cborData = Data(base64Encoded: base64) else {
             throw CashuError.invalidTokenFormat
         }
 
         try validateSafeCBORTokenData(cborData)
-        
-        // Decode CBOR
-        let tokenV4: TokenV4 = try decodeFromCBOR(cborData)
-        
-        // Convert to CashuToken
+
+        // Decode the CBOR structure directly. Untrusted input: every access is typed and
+        // throws `invalidTokenFormat` on mismatch — nothing here can crash the process.
+        guard let root = try? CBOR.decode(cborData.bytes) else {
+            throw CashuError.invalidTokenFormat
+        }
+
+        let rootMap = try requireMap(root)
+        let mint = try requireString(rootMap["m"])
+        let unit = try requireString(rootMap["u"])
+        let memo = try optionalString(rootMap["d"])
+
+        guard case .some(.array(let groups)) = rootMap["t"] else {
+            throw CashuError.invalidTokenFormat
+        }
+
         var proofs: [Proof] = []
-        for keysetGroup in tokenV4.t {
-            let keysetID = keysetGroup.i.hexString
-            for proofV4 in keysetGroup.p {
-                let proof = Proof(
-                    amount: proofV4.a,
+        for group in groups {
+            let groupMap = try requireMap(group)
+            let keysetID = try requireBytes(groupMap["i"]).hexString
+
+            guard case .some(.array(let proofList)) = groupMap["p"] else {
+                throw CashuError.invalidTokenFormat
+            }
+
+            for proofCBOR in proofList {
+                let proofMap = try requireMap(proofCBOR)
+                let amount = try requireAmount(proofMap["a"])
+                let secret = try requireString(proofMap["s"])
+                let signature = try requireBytes(proofMap["c"]).hexString
+                let witness = try optionalString(proofMap["w"])
+
+                var dleq: DLEQProof?
+                if let dleqCBOR = proofMap["d"] {
+                    let dleqMap = try requireMap(dleqCBOR)
+                    dleq = DLEQProof(
+                        e: try requireBytes(dleqMap["e"]).hexString,
+                        s: try requireBytes(dleqMap["s"]).hexString,
+                        r: try requireBytes(dleqMap["r"]).hexString
+                    )
+                }
+
+                proofs.append(Proof(
+                    amount: amount,
                     id: keysetID,
-                    secret: proofV4.s,
-                    C: proofV4.c.hexString
-                )
-                proofs.append(proof)
+                    secret: secret,
+                    C: signature,
+                    witness: witness,
+                    dleq: dleq
+                ))
             }
         }
-        
+
         let tokenEntry = TokenEntry(
-            mint: tokenV4.m,
+            mint: mint,
             proofs: proofs
         )
-        
+
         return CashuToken(
             token: [tokenEntry],
-            unit: tokenV4.u,
-            memo: tokenV4.d
+            unit: unit,
+            memo: memo
         )
+    }
+
+    // MARK: - Typed CBOR extraction (throws instead of crashing on malformed input)
+
+    private static func requireMap(_ cbor: CBOR?) throws -> [CBOR: CBOR] {
+        guard case .some(.map(let map)) = cbor else {
+            throw CashuError.invalidTokenFormat
+        }
+        return map
+    }
+
+    private static func requireString(_ cbor: CBOR?) throws -> String {
+        guard case .some(.utf8String(let string)) = cbor else {
+            throw CashuError.invalidTokenFormat
+        }
+        return string
+    }
+
+    private static func optionalString(_ cbor: CBOR?) throws -> String? {
+        switch cbor {
+        case .none, .some(.null):
+            return nil
+        case .some(.utf8String(let string)):
+            return string
+        default:
+            throw CashuError.invalidTokenFormat
+        }
+    }
+
+    private static func requireBytes(_ cbor: CBOR?) throws -> Data {
+        guard case .some(.byteString(let bytes)) = cbor else {
+            throw CashuError.invalidTokenFormat
+        }
+        return Data(bytes)
+    }
+
+    private static func requireAmount(_ cbor: CBOR?) throws -> Int {
+        guard case .some(.unsignedInt(let value)) = cbor, value > 0, value <= UInt64(Int.max) else {
+            throw CashuError.invalidTokenFormat
+        }
+        return Int(value)
     }
     
     // MARK: - Generic Token Serialization

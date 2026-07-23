@@ -142,9 +142,14 @@ public enum RestorationConstants {
 
 /// Helper for time unit conversions
 public enum TimeConversion {
-    /// Convert seconds to nanoseconds
+    /// Convert seconds to nanoseconds, clamped to `0...UInt64.max`. The plain
+    /// `UInt64(Double)` conversion traps on negative or oversized inputs, which are
+    /// reachable through public retry/backoff parameters.
     public static func secondsToNanoseconds(_ seconds: TimeInterval) -> UInt64 {
-        UInt64(seconds * 1_000_000_000)
+        let nanoseconds = seconds * 1_000_000_000
+        guard nanoseconds > 0 else { return 0 }
+        guard nanoseconds < 0x1.0p63 else { return UInt64(Int64.max) }
+        return UInt64(nanoseconds)
     }
     
     /// Nanoseconds per second

@@ -4,7 +4,24 @@ import Foundation
 /// Suitable for production environments and log aggregation systems
 public final class StructuredLogger: LoggerProtocol, @unchecked Sendable {
 
-    public var minimumLevel: LogLevel
+    /// Backing storage for `minimumLevel`, guarded by a lock: the protocol requires a
+    /// settable property on a Sendable conformer, and an unsynchronized `var` read on
+    /// every log call is a data race the moment any thread adjusts verbosity at runtime.
+    private let minimumLevelLock = NSLock()
+    private var _minimumLevel: LogLevel
+
+    public var minimumLevel: LogLevel {
+        get {
+            minimumLevelLock.lock()
+            defer { minimumLevelLock.unlock() }
+            return _minimumLevel
+        }
+        set {
+            minimumLevelLock.lock()
+            defer { minimumLevelLock.unlock() }
+            _minimumLevel = newValue
+        }
+    }
 
     /// Output format for structured logs
     public enum OutputFormat: Sendable {
@@ -48,7 +65,7 @@ public final class StructuredLogger: LoggerProtocol, @unchecked Sendable {
         staticMetadata: [String: Any] = [:],
         redactor: (any SecretRedactor)? = nil
     ) {
-        self.minimumLevel = minimumLevel
+        self._minimumLevel = minimumLevel
         self.outputFormat = outputFormat
         self.destination = destination
         self.enableRedaction = enableRedaction

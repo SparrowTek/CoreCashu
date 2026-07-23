@@ -346,7 +346,7 @@ public struct KeysetManagementService: Sendable {
         let currentResponse = try await getKeysets(from: mintURL)
         let currentKeysets = currentResponse.keysets
         
-        let previousDict = Dictionary(uniqueKeysWithValues: previousKeysets.map { ($0.id, $0) })
+        let previousDict = Dictionary(previousKeysets.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         
         var newlyActive: [KeysetInfo] = []
         var newlyInactive: [KeysetInfo] = []
@@ -440,7 +440,7 @@ public struct KeysetManagementService: Sendable {
         from mintURL: String
     ) async throws -> ProofSelectionResult {
         let response = try await getKeysets(from: mintURL)
-        let keysetDict = Dictionary(uniqueKeysWithValues: response.keysets.map { ($0.id, $0) })
+        let keysetDict = Dictionary(response.keysets.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         
         // Group proofs by keyset
         let proofsByKeyset = Dictionary(grouping: availableProofs) { $0.id }

@@ -38,15 +38,21 @@ public enum NutValue: CashuCodabale, Sendable {
     
     public init(from decoder: any Decoder) throws {
         let container = try decoder.singleValueContainer()
-        
-        if let string = try? container.decode(String.self) {
+
+        // Tolerant on purpose: `nuts` entries in the wild vary (objects per spec, but
+        // also version strings, bools, numbers, null from older mints). One nonconforming
+        // entry must not fail the whole MintInfo decode — that would make the mint
+        // unusable over a cosmetic field. Non-object values are preserved stringly.
+        if container.decodeNil() {
+            self = .string("")
+        } else if let string = try? container.decode(String.self) {
             self = .string(string)
         } else if let anyValue = try? container.decode(AnyCodable.self) {
             if let dictionary = anyValue.dictionaryValue {
                 let codableDict = dictionary.compactMapValues { AnyCodable(anyValue: $0) }
                 self = .dictionary(codableDict)
             } else {
-                throw DecodingError.typeMismatch(NutValue.self, DecodingError.Context(codingPath: decoder.codingPath, debugDescription: "Cannot decode NutValue"))
+                self = .string(String(describing: anyValue.anyValue))
             }
         } else {
             throw DecodingError.typeMismatch(NutValue.self, DecodingError.Context(codingPath: decoder.codingPath, debugDescription: "Cannot decode NutValue"))

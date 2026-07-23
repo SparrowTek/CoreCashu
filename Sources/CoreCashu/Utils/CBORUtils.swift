@@ -36,8 +36,14 @@ public func decodeFromCBOR<T: Decodable>(_ data: Data, type: T.Type = T.self) th
     
     // Fix boolean fields that CBOR encoded as integers
     dict = fixBooleanFields(in: dict) as? [String: Any] ?? dict
-    
-    // Convert to JSON and decode
+
+    // Convert to JSON and decode. The validity check is load-bearing: CBOR byte strings
+    // surface as `Data`, which JSONSerialization cannot represent — without the guard it
+    // raises an uncatchable NSException and kills the process on untrusted input.
+    // (Cashu V4 tokens never take this path — TokenUtils decodes their CBOR directly.)
+    guard JSONSerialization.isValidJSONObject(dict) else {
+        throw CashuError.invalidTokenFormat
+    }
     let jsonData = try JSONSerialization.data(withJSONObject: dict)
     let decoder = JSONDecoder()
     return try decoder.decode(T.self, from: jsonData)

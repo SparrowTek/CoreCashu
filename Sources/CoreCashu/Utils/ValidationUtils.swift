@@ -26,7 +26,26 @@ public protocol Validatable {
 public struct ValidationUtils: Sendable {
     
     // MARK: - Amount Validation
-    
+
+    /// Sum proof amounts with overflow checking. Proofs from pasted tokens are untrusted:
+    /// two `Int.max` amounts must produce a thrown error, not an arithmetic trap.
+    /// - Throws: ``CashuError/invalidAmount`` for non-positive amounts,
+    ///   ``CashuError/amountTooLarge`` on overflow.
+    public static func checkedProofsTotal(_ proofs: [Proof]) throws -> Int {
+        var total = 0
+        for proof in proofs {
+            guard proof.amount > 0 else {
+                throw CashuError.invalidAmount
+            }
+            let (sum, overflow) = total.addingReportingOverflow(proof.amount)
+            guard !overflow else {
+                throw CashuError.amountTooLarge
+            }
+            total = sum
+        }
+        return total
+    }
+
     /// Validate amount value
     /// - Parameters:
     ///   - amount: Amount to validate
@@ -263,7 +282,14 @@ public struct ValidationUtils: Sendable {
                 errors.append("Token entry at index \(index): \(entryValidation.errors.joined(separator: ", "))")
             }
         }
-        
+
+        // The total must be summable without trapping — a pasted token with amounts near
+        // Int.max would otherwise crash every code path that totals it.
+        let allProofs = token.token.flatMap { $0.proofs }
+        if (try? checkedProofsTotal(allProofs)) == nil {
+            errors.append("Token amounts are invalid or overflow")
+        }
+
         return ValidationResult(isValid: errors.isEmpty, errors: errors)
     }
     

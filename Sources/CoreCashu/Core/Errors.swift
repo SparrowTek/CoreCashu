@@ -169,6 +169,11 @@ public enum CashuError: Error, Sendable {
     case notImplemented
     case invalidDerivationPath
     case temporaryFailure
+    /// A melt request was sent but the outcome could not be determined (timeout,
+    /// connection loss, or a failure after the mint may have begun paying). The input
+    /// proofs stay reserved; check the quote with ``CashuWallet/checkMeltQuote(_:method:)``
+    /// and settle with ``CashuWallet/resolvePendingMelt(quoteID:method:)``.
+    case meltOutcomeUnknown(quoteID: String)
 }
 
 // MARK: - HTTP Error Response (NUT-00 Specification)
@@ -226,7 +231,7 @@ extension CashuError {
              .locktimeNotExpired, .invalidProofType, .invalidWitness, .noActiveKeyset,
              .quotePending, .quoteExpired, .quoteNotFound, .keysetInactive,
              .invalidUnit, .invalidDenomination, .invalidDerivationPath,
-             .notImplemented:
+             .notImplemented, .meltOutcomeUnknown:
             return .`protocol`
             
         case .connectionFailed, .temporaryFailure:
@@ -459,6 +464,8 @@ extension CashuError: LocalizedError {
             return "Invalid derivation path"
         case .temporaryFailure:
             return "Temporary failure, please retry"
+        case .meltOutcomeUnknown(let quoteID):
+            return "Melt outcome unknown for quote \(quoteID); inputs stay reserved until the quote state is resolved"
         }
     }
 }

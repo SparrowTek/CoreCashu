@@ -241,7 +241,7 @@ public struct SwapService: Sendable {
     ) async throws -> SwapPreparation {
         // Get keyset information for fee calculation
         let keysetResponse = try await keysetManagementService.getKeysets(from: mintURL)
-        let keysetDict = Dictionary(uniqueKeysWithValues: keysetResponse.keysets.map { ($0.id, $0) })
+        let keysetDict = Dictionary(keysetResponse.keysets.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         
         // Select optimal proofs for the target amount
         let selectionResult = try await keysetManagementService.calculateOptimalProofSelection(
@@ -319,7 +319,7 @@ public struct SwapService: Sendable {
         // deterministic even after the sort.
         let reservedStart: UInt32?
         if let deterministicOutputs {
-            reservedStart = await deterministicOutputs.reserve(count: pending.count, for: activeKeyset.id)
+            reservedStart = try await deterministicOutputs.reserve(count: pending.count, for: activeKeyset.id)
         } else {
             reservedStart = nil
         }
@@ -386,11 +386,12 @@ public struct SwapService: Sendable {
     ) async throws -> SwapPreparation {
         // Get keyset information for fee calculation
         let keysetResponse = try await keysetManagementService.getKeysets(from: mintURL)
-        let keysetDict = Dictionary(uniqueKeysWithValues: keysetResponse.keysets.map { ($0.id, $0) })
+        let keysetDict = Dictionary(keysetResponse.keysets.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         
-        // Calculate fees
+        // Calculate fees. Received proofs come from pasted tokens — the sum is
+        // overflow-checked so a crafted token can't trap the process.
         let fees = FeeCalculator.calculateFees(for: receivedProofs, keysetInfo: keysetDict)
-        let totalInput = receivedProofs.reduce(0) { $0 + $1.amount }
+        let totalInput = try ValidationUtils.checkedProofsTotal(receivedProofs)
         let totalOutput = totalInput - fees
         
         // Create output denominations
@@ -482,7 +483,7 @@ public struct SwapService: Sendable {
         
         // Get mint public keys for unblinding
         let keyResponse = try await keyExchangeService.getKeys(from: mintURL)
-        let mintKeys = Dictionary(uniqueKeysWithValues: keyResponse.keysets.flatMap { keyset in
+        let mintKeys = Dictionary(keyResponse.keysets.flatMap { keyset in
             keyset.keys.compactMap { (amountStr, publicKeyHex) -> (String, P256K.KeyAgreement.PublicKey)? in
                 guard let amount = Int(amountStr),
                       let publicKeyData = Data(hexString: publicKeyHex),
@@ -491,36 +492,60 @@ public struct SwapService: Sendable {
                 }
                 return ("\(keyset.id)_\(amount)", publicKey)
             }
-        })
+        }, uniquingKeysWith: { first, _ in first })
         
         // Unblind signatures to create new proofs
         var newProofs: [Proof] = []
         
         for (index, signature) in response.signatures.enumerated() {
             let blindingData = preparation.blindingData[index]
+
+            // The mint's stated amount/keyset are cross-checked against what was
+            // requested — otherwise a misbehaving mint can shortchange the wallet by
+            // returning smaller denominations than it signed for.
+            let requested = preparation.blindedMessages[index]
+            guard signature.amount == requested.amount,
+                  requested.id == nil || requested.id == signature.id else {
+                throw CashuError.invalidSignature("Mint returned signature for amount \(signature.amount), requested \(requested.amount)")
+            }
+
             let mintKeyKey = "\(signature.id)_\(signature.amount)"
-            
+
             guard let mintPublicKey = mintKeys[mintKeyKey] else {
                 throw CashuError.invalidSignature("Mint public key not found for amount \(signature.amount)")
             }
-            
+
             guard let blindedSignatureData = Data(hexString: signature.C_) else {
                 throw CashuError.invalidHexString
             }
-            
+
+            // Verify the DLEQ proof whenever the mint provides one (NUT-12): it ties the
+            // signature to the mint's published key, preventing per-user key tagging.
+            if let dleq = signature.dleq {
+                guard let blindedSignaturePoint = try? P256K.KeyAgreement.PublicKey(dataRepresentation: blindedSignatureData, format: .compressed),
+                      try verifyDLEQProofAlice(
+                        proof: dleq,
+                        mintPublicKey: mintPublicKey,
+                        blindedMessage: blindingData.blindedMessage,
+                        blindedSignature: blindedSignaturePoint
+                      ) else {
+                    throw CashuError.invalidSignature("DLEQ proof verification failed for swap output \(index)")
+                }
+            }
+
             let unblindedToken = try Wallet.unblindSignature(
                 blindedSignature: blindedSignatureData,
                 blindingData: blindingData,
                 mintPublicKey: mintPublicKey
             )
-            
+
             let proof = Proof(
                 amount: signature.amount,
                 id: signature.id,
                 secret: unblindedToken.secret,
                 C: unblindedToken.signature.hexString
             )
-            
+
             newProofs.append(proof)
         }
         

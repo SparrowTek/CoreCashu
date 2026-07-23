@@ -66,40 +66,47 @@ public extension CashuWallet {
         )
     }
     
-    /// Get real-time balance updates (for UI binding)
+    /// Get real-time balance updates (for UI binding).
+    ///
+    /// The polling task ends when the consumer stops iterating (via `onTermination`) or
+    /// the wallet deallocates — it must not retain the wallet or poll forever after the
+    /// last subscriber goes away.
     func getBalanceStream() -> AsyncStream<BalanceUpdate> {
         return AsyncStream { continuation in
-            Task {
+            let task = Task { [weak self] in
                 var lastBalance = 0
-                
+
                 while !Task.isCancelled {
-                    do {
-                        let currentBalance = try await self.balance
-                        if currentBalance != lastBalance {
-                            let update = BalanceUpdate(
-                                newBalance: currentBalance,
-                                previousBalance: lastBalance,
-                                timestamp: Date()
-                            )
-                            continuation.yield(update)
-                            lastBalance = currentBalance
-                        }
-                    } catch {
-                        let errorUpdate = BalanceUpdate(
-                            newBalance: lastBalance,
-                            previousBalance: lastBalance,
-                            timestamp: Date(),
-                            error: error
-                        )
-                        continuation.yield(errorUpdate)
+                    guard let update = await self?.nextBalanceUpdate(previous: lastBalance) else {
+                        if self == nil { break } // wallet gone
+                        try? await Task.sleep(nanoseconds: 5_000_000_000)
+                        continue
                     }
-                    
+                    continuation.yield(update)
+                    lastBalance = update.newBalance
+
                     // Check every 5 seconds
                     try? await Task.sleep(nanoseconds: 5_000_000_000)
                 }
-                
+
                 continuation.finish()
             }
+
+            continuation.onTermination = { _ in
+                task.cancel()
+            }
+        }
+    }
+
+    /// One balance poll: nil when the balance is unchanged, an update (possibly carrying
+    /// an error) otherwise.
+    internal func nextBalanceUpdate(previous: Int) async -> BalanceUpdate? {
+        do {
+            let current = try await balance
+            guard current != previous else { return nil }
+            return BalanceUpdate(newBalance: current, previousBalance: previous, timestamp: Date())
+        } catch {
+            return BalanceUpdate(newBalance: previous, previousBalance: previous, timestamp: Date(), error: error)
         }
     }
     
@@ -184,18 +191,53 @@ public extension CashuWallet {
                 newDenominations: currentDenominations
             )
         }
-        
-        // Perform swap using rotateTokens which swaps all proofs for fresh ones
-        // This gives the mint the opportunity to return optimally-denominated proofs
-        let swapResult = try await swapService.rotateTokens(
-            proofs: allProofs,
-            at: configuration.mintURL
-        )
-        
-        // Update proof storage
-        try await proofManager.removeProofs(allProofs)
+
+        // This swap moves the wallet's entire spendable balance, so it runs under the
+        // same discipline as send(): inputs reserved before any network call,
+        // deterministic (seed-recoverable) outputs when available, new proofs persisted
+        // before old ones are removed, and no rollback once the mint may have swapped.
+        try await proofManager.markAsPendingSpent(allProofs)
+
+        let preparation: SwapPreparation
+        do {
+            preparation = try await swapService.prepareSwapToReceive(
+                receivedProofs: allProofs,
+                unit: configuration.unit,
+                at: configuration.mintURL,
+                deterministicOutputs: deterministicOutputProvider()
+            )
+        } catch {
+            try await proofManager.rollbackPendingSpent(allProofs)
+            throw error
+        }
+
+        let swapResult: SwapResult
+        do {
+            swapResult = try await swapService.executeCompleteSwap(
+                preparation: preparation,
+                at: configuration.mintURL
+            )
+        } catch {
+            if Self.isDefiniteRejection(error) {
+                try await proofManager.rollbackPendingSpent(allProofs)
+                throw error
+            }
+            if let unspent = try? await allInputsUnspent(allProofs), unspent {
+                try await proofManager.rollbackPendingSpent(allProofs)
+                throw error
+            }
+            throw CashuError.wrappedFailure(
+                message: "Denomination swap outcome unknown; proofs stay reserved. Run restoreFromSeed to recover outputs if the swap settled.",
+                underlying: error
+            )
+        }
+
+        // Update proof storage — new proofs first, then retire the swapped inputs.
         try await proofManager.addProofs(swapResult.newProofs)
-        
+        try await proofManager.finalizePendingSpent(allProofs)
+        try await proofManager.markAsSpent(allProofs)
+        try await proofManager.removeProofs(allProofs)
+
         let newDenominations = swapResult.newProofs.denominationCounts
         
         return OptimizationResult(
